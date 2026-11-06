@@ -543,7 +543,31 @@ export function lastAssistantTurn(turns: readonly Turn[]): Turn | undefined {
   return undefined;
 }
 
-/** Merges the full-history fetch with the windowed, live messages, preferring the live copy. */
+const byTime = (a: SessionMessageInfo, b: SessionMessageInfo): number => {
+  const delta = a.time.created - b.time.created;
+  return delta !== 0 ? delta : a.id.localeCompare(b.id);
+};
+
+/**
+ * Union of the full-history fetch and the live window, preferring the live
+ * copy. Used for the reading that must survive a compaction: rates, the last
+ * turn, reasoning and session totals.
+ */
+export function mergeTimeline(
+  full: readonly SessionMessageInfo[],
+  loaded: readonly SessionMessageInfo[],
+): SessionMessageInfo[] {
+  const byID = new Map<string, SessionMessageInfo>();
+  for (const message of full) byID.set(message.id, message);
+  for (const message of loaded) byID.set(message.id, message);
+  return Array.from(byID.values()).sort(byTime);
+}
+
+/**
+ * Merges the active-history fetch with the windowed, live messages, preferring
+ * the live copy. Used for the context composition, which only covers what the
+ * next request would send.
+ */
 export function mergeMessages(
   full: readonly SessionMessageInfo[],
   loaded: readonly SessionMessageInfo[],
@@ -557,15 +581,11 @@ export function mergeMessages(
   }
   // `session.context` returns the active history: all messages after the last
   // compaction. The timeline keeps the pre-compaction window on screen, so a
-  // plain union would re-add those old messages and restore the totals the
-  // compaction reset. Only messages inside the active range (or newer) join,
-  // and a live copy still wins by id.
+  // plain union would re-add those old messages to the active range. Only
+  // messages inside it (or newer) join, and a live copy still wins by id.
   for (const message of loaded) {
     if (byID.has(message.id)) byID.set(message.id, message);
     else if (message.time.created >= activeFrom) byID.set(message.id, message);
   }
-  return Array.from(byID.values()).sort((a, b) => {
-    const delta = a.time.created - b.time.created;
-    return delta !== 0 ? delta : a.id.localeCompare(b.id);
-  });
+  return Array.from(byID.values()).sort(byTime);
 }

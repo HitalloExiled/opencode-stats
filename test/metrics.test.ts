@@ -19,6 +19,7 @@ import {
   estimateLiveRate,
   findTurns,
   mergeMessages,
+  mergeTimeline,
   stepMetrics,
 } from "../src/metrics";
 
@@ -427,5 +428,30 @@ describe("mergeMessages", () => {
   test("returns the live window when there is no full history", () => {
     const message = assistant({ id: "a1" });
     expect(mergeMessages([], [message])).toEqual([message]);
+  });
+});
+
+describe("mergeTimeline", () => {
+  test("keeps the pre-compaction window and lets the live copy win", () => {
+    const oldUser = user("u1", 1000);
+    const oldAssistant = assistant({ id: "a1", created: 1100, output: 1 });
+    const compaction = {
+      type: "compaction",
+      id: "c1",
+      time: { created: 5000 },
+      status: "completed",
+      reason: "auto",
+      summary: "summary",
+    } as SessionMessageInfo;
+    const active = assistant({ id: "a2", created: 6000 });
+    const liveOld = assistant({ id: "a1", created: 1100, output: 9 });
+
+    const merged = mergeTimeline(
+      [compaction, active],
+      [oldUser, liveOld, compaction, active],
+    );
+
+    expect(merged.map((message) => message.id)).toEqual(["u1", "a1", "c1", "a2"]);
+    expect((merged[1] as SessionMessageAssistant).tokens?.output).toBe(9);
   });
 });

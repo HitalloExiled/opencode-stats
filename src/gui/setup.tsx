@@ -152,21 +152,9 @@ export function setup(ctx: SetupContext<never>): void {
 
   ctx.add(MenuItem, (): SessionPanelMenuItem => ({
     menu: "session.panel",
-    id: "observability",
-    get title() {
-      return observabilityEnabled()
-        ? text("Desativar observabilidade", "Disable observability")
-        : text("Ativar observabilidade", "Enable observability");
-    },
-    get icon() {
-      return observabilityEnabled() ? "outline-eye" : "outline-eye-slash";
-    },
-    run: () => void toggleObservability(),
-  }));
-
-  ctx.add(MenuItem, (): SessionPanelMenuItem => ({
-    menu: "session.panel",
     id: "stats",
+    // Native panel actions use orders 10-30; plugin tabs go after them.
+    order: 43,
     get title() {
       return text("Estatísticas", "Statistics");
     },
@@ -177,6 +165,7 @@ export function setup(ctx: SetupContext<never>): void {
   ctx.add(MenuItem, (): SessionPanelMenuItem => ({
     menu: "session.panel",
     id: "prompt",
+    order: 44,
     get title() {
       return text("Prompt do sistema", "System prompt");
     },

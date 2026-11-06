@@ -114,8 +114,9 @@ classificado; documente isso se for adicionar um fallback.
   - `prompt` — abre pelo comando/menu, renderiza `PromptView` quando está em
     `input.open`.
   O `render` é keyed por `props.session.key` para zerar buffers ao trocar de
-  sessão. O setup também registra o comando e a entrada de menu
-  **Ativar/Desativar observabilidade** (título reativo pelo signal).
+  sessão. O setup também registra o comando **Ativar/Desativar observabilidade**
+  (título reativo pelo signal); a entrada de menu correspondente foi removida —
+  o toggle fica no cabeçalho da aba Estatísticas e na paleta de comandos.
 - `usePlugin()` só funciona dentro de contributions. **Não use `useT()` no
   setup**; leia `ctx.locale.locale()` diretamente (o setup não está sob o
   provider).
@@ -126,8 +127,10 @@ classificado; documente isso se for adicionar um fallback.
   fórmula de tok/s e os paths SVG são locais.
 - Dados:
   - métricas ao vivo: `session.server.data.session.message.list(id)`;
-  - histórico ativo: `client.session.context({ sessionID })`, mesclado por id
-    com a janela viva;
+  - histórico ativo: `client.session.context({ sessionID })`; `mergeMessages`
+    cruza por id com a janela viva e mantém só o recorte ativo (visão
+    **Contexto**); `mergeTimeline` cruza sem recorte (tok/s, turno, reasoning e
+    totais) — uma compactação **não** pode zerar a leitura do painel;
   - status: `data.session.status(id)`;
   - prompt: `client.rpc(StatsRpc).systemPrompt({ sessionID, ifNoneMatch }, ...)`
     com `{ location: { directory: session.directory } }`; trate os três
@@ -142,7 +145,9 @@ classificado; documente isso se for adicionar um fallback.
   ponto exato do passo só rodam com ela ligada e com o documento visível.
 - O ring buffer de tok/s guarda 300 amostras por turno, amostra a 1 Hz enquanto
   `running`. O ponto exato entra quando o passo completa. A escala do gauge só
-  cresce (`niceScale`).
+  cresce (`niceScale`); o eixo Y do gráfico é dinâmico (`chartScale`), calculado
+  a partir do pico e da média das amostras **dentro da janela exibida** (Turno
+  ou Sessão), então os rótulos precisam ser reativos.
 - Layout: use as variáveis `--v2-*` com fallback (como `notes`/`plans`) para
   funcionar nos temas claro e escuro. O bundle carrega o próprio CSS em
   `<style>`.

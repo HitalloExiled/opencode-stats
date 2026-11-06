@@ -1,9 +1,10 @@
 /**
  * Line + area chart for the tok/s history.
  *
- * The turn range is a rolling 60-second window; the session range uses one
- * exact point per completed step over the session's time span. The chart is
- * plain SVG so the GUI bundle carries no chart dependency.
+ * The turn range spans the whole current/last turn; the session range uses one
+ * exact point per completed step over the session's time span. The y axis and
+ * the average are derived from the samples actually shown. The chart is plain
+ * SVG so the GUI bundle carries no chart dependency.
  */
 
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -11,8 +12,12 @@ import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-j
 import { formatRate } from "../format";
 import {
   areaPath,
+  averageValue,
+  chartScale,
   linePath,
+  maxValue,
   normalizeSeries,
+  sampleDomain,
   stepPointIndices,
   type RateSample,
 } from "../history";
@@ -54,8 +59,6 @@ const MIN_WIDTH = LEFT + RIGHT + 24;
 export function RateChart(props: {
   turnSamples: readonly RateSample[];
   sessionSamples: readonly RateSample[];
-  average: number | undefined;
-  scaleMax: number;
   live: boolean;
   now: number;
   range: ChartRange;
@@ -84,21 +87,23 @@ export function RateChart(props: {
     props.range === "session" ? [...props.sessionSamples] : [...props.turnSamples],
   );
 
-  const domain = createMemo(() => {
-    const list = samples();
-    const first = list[0]?.t;
-    const last = list[list.length - 1]?.t;
-    if (props.range === "session") {
-      const t0 = first ?? props.now;
-      const t1 = last ?? props.now;
-      return { t0, t1: t1 > t0 ? t1 : t0 + 1000 };
-    }
-    const t1 = props.live ? Math.max(props.now, last ?? props.now) : (last ?? props.now);
-    return { t0: t1 - 60_000, t1 };
+  const domain = createMemo(() => sampleDomain(samples(), props.now));
+
+  // The axis and the average describe what is actually drawn: the turn's
+  // samples or the whole session. Counting points outside the domain would
+  // keep the scale high after a fast stretch leaves the window.
+  const visible = createMemo(() => {
+    const { t0, t1 } = domain();
+    return samples().filter(
+      (sample) => sample.t >= t0 && sample.t <= t1 && Number.isFinite(sample.value),
+    );
   });
 
+  const scaleMax = createMemo(() => chartScale(maxValue(visible()) ?? 0));
+  const average = createMemo(() => averageValue(visible()));
+
   const points = createMemo(() =>
-    normalizeSeries(samples(), domain().t0, domain().t1, Math.max(1, props.scaleMax)),
+    normalizeSeries(visible(), domain().t0, domain().t1, Math.max(1, scaleMax())),
   );
 
   const line = createMemo(() => linePath(points(), pw(), PH));
@@ -109,22 +114,27 @@ export function RateChart(props: {
   });
 
   const averageY = createMemo(() => {
-    const average = props.average;
-    if (average === undefined || !Number.isFinite(average) || props.scaleMax <= 0) return undefined;
-    const ratio = Math.min(1, Math.max(0, average / props.scaleMax));
+    const value = average();
+    if (value === undefined || !Number.isFinite(value) || scaleMax() <= 0) return undefined;
+    const ratio = Math.min(1, Math.max(0, value / scaleMax()));
     return TOP + PH * (1 - ratio);
   });
 
-  const grid = [0, 0.5, 1].map((ratio) => ({
-    ratio,
-    y: TOP + PH * (1 - ratio),
-    label: formatRate(props.scaleMax * ratio, locale, 0),
-  }));
+  // Must be a memo: the scale follows the displayed window, so the labels have
+  // to move with it. Reading `scaleMax()` once at setup froze the labels at
+  // the initial 40 while the line and the average already used the new scale.
+  const grid = createMemo(() =>
+    [0, 0.5, 1].map((ratio) => ({
+      ratio,
+      y: TOP + PH * (1 - ratio),
+      label: formatRate(scaleMax() * ratio, locale, 0),
+    })),
+  );
 
   const lastPoint = createMemo(() => points()[points().length - 1]);
 
   const caption = () =>
-    props.range === "session" ? t("stats.sessionRange") : t("stats.last60");
+    props.range === "session" ? t("stats.sessionRange") : t("stats.turnRange");
 
   return (
     <>
@@ -158,7 +168,7 @@ export function RateChart(props: {
           aria-label={`${t("stats.history")}: ${caption()}`}
           preserveAspectRatio="none"
         >
-          <For each={grid}>
+          <For each={grid()}>
             {(row) => (
               <>
                 <line class="stats-chart-grid" x1={LEFT} x2={width() - RIGHT} y1={row.y} y2={row.y} />
@@ -206,7 +216,7 @@ export function RateChart(props: {
           </Show>
 
           <text class="stats-chart-axis" x={LEFT} y={H - 4} text-anchor="start">
-            {props.range === "session" ? t("stats.start") : t("stats.last60")}
+            {t("stats.start")}
           </text>
           <text class="stats-chart-axis" x={width() - RIGHT} y={H - 4} text-anchor="end">
             {t("stats.now")}
@@ -219,7 +229,7 @@ export function RateChart(props: {
               y={Math.max(TOP + 8, averageY()! - 3)}
               text-anchor="end"
             >
-              {t("stats.avg")} {formatRate(props.average, locale)}
+              {t("stats.avg")} {formatRate(average(), locale)}
             </text>
           </Show>
         </svg>

@@ -7,10 +7,12 @@ import type { SessionMessageAssistant, SessionMessageInfo } from "@opencode/clie
 
 import {
   averageValue,
+  chartScale,
   createRingBuffer,
   lastValue,
   maxValue,
   niceScale,
+  sampleDomain,
   samplesForTurn,
   stepSamples,
   type RateSample,
@@ -79,6 +81,31 @@ describe("niceScale", () => {
     expect(niceScale(50)).toBe(60);
     expect(niceScale(100)).toBe(120);
     expect(niceScale(500)).toBe(600);
+  });
+});
+
+describe("chartScale", () => {
+  test("follows the window peak instead of keeping the gauge floor", () => {
+    expect(chartScale(0)).toBe(10);
+    expect(chartScale(12)).toBe(20);
+    expect(chartScale(52.8)).toBe(60);
+    expect(chartScale(100)).toBe(120);
+    expect(chartScale(1500)).toBe(1600);
+  });
+});
+
+describe("sampleDomain", () => {
+  test("spans the samples and anchors the end at the newest one", () => {
+    const samples = [sample(1_000, 10), sample(2_000, 20), sample(3_000, 15)];
+    expect(sampleDomain(samples, 9_000)).toEqual({ t0: 1_000, t1: 3_000 });
+  });
+
+  test("gives a single point a visible span", () => {
+    expect(sampleDomain([sample(1_000, 10)], 9_000)).toEqual({ t0: 1_000, t1: 2_000 });
+  });
+
+  test("falls back to a 60-second empty window", () => {
+    expect(sampleDomain([], 60_000)).toEqual({ t0: 0, t1: 60_000 });
   });
 });
 

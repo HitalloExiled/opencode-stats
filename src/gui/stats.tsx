@@ -28,6 +28,7 @@ import {
   findTurns,
   lastAssistantTurn,
   mergeMessages,
+  mergeTimeline,
   stepMetrics,
   totalTokens,
   type ToolCall,
@@ -103,7 +104,11 @@ const CSS = `
 .stats-quick-label { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9px; font-weight: 650; letter-spacing: 0.5px; text-transform: uppercase; }
 .stats-quick-value { color: var(--v2-text-text-base, #e8e8e8); font-size: 12.5px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stats-quick-value small { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; font-weight: 500; }
-.stats-metric { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-01, #191919); border-radius: 8px; }
+.stats-metric { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-01, #191919); border-radius: 8px; min-width: 0; }
+.stats-metric-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.stats-metric-row .stats-metric { padding: 6px; gap: 6px; }
+.stats-metric-row .stats-metric-lead { width: 20px; height: 20px; }
+.stats-metric-row .stats-metric-value { font-size: 9.5px; }
 .stats-metric-lead { width: 23px; height: 23px; border-radius: 7px; display: grid; place-items: center; flex: none; }
 .stats-metric-lead.is-reason { background: color-mix(in srgb, var(--stats-reason) 12%, transparent); color: var(--stats-reason); }
 .stats-metric-lead.is-tool { background: color-mix(in srgb, var(--v2-text-text-warning, #f0b44c) 12%, transparent); color: var(--v2-text-text-warning, #f0b44c); }
@@ -244,18 +249,24 @@ export function StatsView(props: { session: MountedSession }) {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [now, setNow] = createSignal(Date.now());
-  const [scaleMax, setScaleMax] = createSignal(40);
+  const [gaugeMax, setGaugeMax] = createSignal(40);
   const [capture, setCapture] = createSignal<PromptCapture | null>(null);
 
+  // Reading (rate, last turn, reasoning, totals): the union keeps the
+  // pre-compaction window, so a compaction or a model switch followed by one
+  // does not zero the card.
+  const timeline = createMemo(() => mergeTimeline(full(), loaded()));
+  // Active window: what the next request would send, used by the context view.
   const messages = createMemo(() => mergeMessages(full(), loaded()));
-  const turns = createMemo(() => findTurns(messages()));
+  const turns = createMemo(() => findTurns(timeline()));
   const lastTurn = createMemo(() => lastAssistantTurn(turns()));
   const turnMetrics = createMemo(() => {
     const turn = lastTurn();
     return turn ? analyzeTurn(turn, now(), running()) : undefined;
   });
-  const sessionMetrics = createMemo(() => analyzeSession(messages()));
-  const sessionSamples = createMemo(() => stepSamples(messages()));
+  const sessionMetrics = createMemo(() => analyzeSession(timeline()));
+  const activeMetrics = createMemo(() => analyzeSession(messages()));
+  const sessionSamples = createMemo(() => stepSamples(timeline()));
 
   let buffer = createRingBuffer(300);
   const [liveSamples, setLiveSamples] = createSignal<RateSample[]>([]);
@@ -321,7 +332,7 @@ export function StatsView(props: { session: MountedSession }) {
     );
     const observed = values.length > 0 ? Math.max(...values) : 0;
     const next = niceScale(observed);
-    if (next > scaleMax()) setScaleMax(next);
+    if (next > gaugeMax()) setGaugeMax(next);
   });
 
   let controller: AbortController | undefined;
@@ -502,7 +513,9 @@ export function StatsView(props: { session: MountedSession }) {
   );
 
   const tokenParts = createMemo(() => {
-    const metrics = sessionMetrics();
+    // Context describes the active window; Processed covers the whole
+    // timeline, including what a compaction summarized.
+    const metrics = tokenView() === "context" ? activeMetrics() : sessionMetrics();
 
     if (tokenView() === "context") {
       const request = metrics.lastRequest;
@@ -559,7 +572,7 @@ export function StatsView(props: { session: MountedSession }) {
   });
 
   const modelLimit = createMemo(() => {
-    const request = sessionMetrics().lastRequest;
+    const request = activeMetrics().lastRequest;
     if (!request) return undefined;
     const models = data.location.model.list(session.location);
     const entry = models?.find(
@@ -600,7 +613,7 @@ export function StatsView(props: { session: MountedSession }) {
   });
 
   const contextSources = createMemo(() => {
-    const metrics = sessionMetrics();
+    const metrics = activeMetrics();
     const request = metrics.lastRequest;
     if (!request) return { entries: [], total: 0 };
     const tokens = request.tokens;
@@ -811,7 +824,7 @@ export function StatsView(props: { session: MountedSession }) {
               <Gauge
                 value={currentRate()}
                 average={averageRate()}
-                max={scaleMax()}
+                max={gaugeMax()}
                 live={isLiveRate()}
               />
             </div>
@@ -852,40 +865,40 @@ export function StatsView(props: { session: MountedSession }) {
           <RateChart
             turnSamples={turnSamples()}
             sessionSamples={sessionSamples()}
-            average={averageRate()}
-            scaleMax={scaleMax()}
             live={running()}
             now={now()}
             range={range()}
             onRange={setRange}
           />
 
-          <div class="stats-metric">
-            <span class="stats-metric-lead is-reason">
-              <Icon path={BRAIN} size={13} />
-            </span>
-            <span class="stats-metric-text">
-              <span class="stats-metric-key">{t("stats.reasoning")}</span>
-              <span class="stats-metric-value">
-                <b>{formatTokens(reasoningTokens(), locale)}</b> {t("stats.tokens")} ·{" "}
-                <b>{formatDuration(turnMetrics()?.reasoningMs)}</b> ·{" "}
-                <b>{formatPercent(reasoningShare(), locale)}</b> {t("stats.shareOfOutput")}
+          <div class="stats-metric-row">
+            <div class="stats-metric">
+              <span class="stats-metric-lead is-reason">
+                <Icon path={BRAIN} size={13} />
               </span>
-            </span>
-          </div>
+              <span class="stats-metric-text">
+                <span class="stats-metric-key">{t("stats.reasoning")}</span>
+                <span class="stats-metric-value">
+                  <b>{formatTokens(reasoningTokens(), locale)}</b> {t("stats.tokens")} ·{" "}
+                  <b>{formatDuration(turnMetrics()?.reasoningMs)}</b> ·{" "}
+                  <b>{formatPercent(reasoningShare(), locale)}</b> {t("stats.shareOfOutput")}
+                </span>
+              </span>
+            </div>
 
-          <div class="stats-metric">
-            <span class="stats-metric-lead is-tool">
-              <Icon path={TOOL} size={13} />
-            </span>
-            <span class="stats-metric-text">
-              <span class="stats-metric-key">{t("stats.tools")}</span>
-              <span class="stats-metric-value">
-                <b>{turnTools().calls.length}</b> {t("stats.calls")} · <b>{turnTools().ok}</b>{" "}
-                {t("tool.ok")} · <b>{turnTools().error}</b> {t("tool.error")} ·{" "}
-                <b>{formatDuration(turnTools().totalMs)}</b>
+            <div class="stats-metric">
+              <span class="stats-metric-lead is-tool">
+                <Icon path={TOOL} size={13} />
               </span>
-            </span>
+              <span class="stats-metric-text">
+                <span class="stats-metric-key">{t("stats.tools")}</span>
+                <span class="stats-metric-value">
+                  <b>{turnTools().calls.length}</b> {t("stats.calls")} · <b>{turnTools().ok}</b>{" "}
+                  {t("tool.ok")} · <b>{turnTools().error}</b> {t("tool.error")} ·{" "}
+                  <b>{formatDuration(turnTools().totalMs)}</b>
+                </span>
+              </span>
+            </div>
           </div>
 
           <div

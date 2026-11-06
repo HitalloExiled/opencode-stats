@@ -89,6 +89,22 @@ export function samplesForTurn(turn: Turn | undefined, live: readonly RateSample
   return [...live, ...exact].sort((a, b) => a.t - b.t || (a.kind === "step" ? 1 : -1));
 }
 
+/**
+ * Time span of the series on screen. The newest sample anchors the right edge,
+ * so the line always reaches the border instead of stopping short until the
+ * next 1 Hz tick; there is no fixed window that truncates the turn.
+ */
+export function sampleDomain(
+  samples: readonly RateSample[],
+  now: number,
+): { t0: number; t1: number } {
+  const first = samples[0]?.t;
+  const last = samples[samples.length - 1]?.t;
+  const t1 = last ?? now;
+  const t0 = first ?? t1 - 60_000;
+  return { t0, t1: t1 > t0 ? t1 : t0 + 1000 };
+}
+
 export function averageValue(samples: readonly RateSample[]): number | undefined {
   const values = samples.map((sample) => sample.value).filter((value) => Number.isFinite(value) && value > 0);
   if (values.length === 0) return undefined;
@@ -110,13 +126,26 @@ export function lastValue(samples: readonly RateSample[]): number | undefined {
 }
 
 /**
- * Chooses a stable, round maximum for the gauge and chart. The scale only
- * grows during a session, so the arc does not jump every second.
+ * Chooses a stable, round maximum for the gauge. The scale only grows during a
+ * session, so the arc does not jump every second.
  */
+const RATE_STEPS = [10, 20, 30, 40, 60, 80, 100, 120, 160, 200, 240, 320, 400, 600, 800, 1000];
+
 export function niceScale(max: number, floor = 40): number {
-  const steps = [40, 60, 80, 100, 120, 160, 200, 240, 320, 400, 600, 800, 1000];
   const target = Math.max(floor, (Number.isFinite(max) ? max : floor) * 1.15);
-  const found = steps.find((step) => step >= target);
+  const found = RATE_STEPS.find((step) => step >= target);
+  if (found !== undefined) return found;
+  return Math.ceil(target / 200) * 200;
+}
+
+/**
+ * Round maximum for the chart's y axis. Unlike the gauge, the chart follows the
+ * window on screen, so the axis may shrink when the window changes. The small
+ * headroom keeps the peak just below the top edge; the half tick stays round.
+ */
+export function chartScale(max: number): number {
+  const target = Number.isFinite(max) && max > 0 ? max * 1.05 : RATE_STEPS[0]!;
+  const found = RATE_STEPS.find((step) => step >= target);
   if (found !== undefined) return found;
   return Math.ceil(target / 200) * 200;
 }

@@ -52,12 +52,16 @@ symlink, instala as dependências e compila o bundle da GUI.
   (inclusive entre passos, durante ferramentas) e sem `~` quando a sessão fica
   ociosa. Durante a transmissão o valor é estimado; ao terminar cada passo, o
   exato substitui a estimativa. A média da sessão fica marcada no arco.
-- **Escala adaptativa**: piso de 40 tok/s e degraus redondos (40, 60, 80, 100,
-  120, 160, 200...). A escala só cresce durante a sessão, então o arco não pula
-  a cada amostra.
+- **Escala adaptativa**: o gauge tem piso de 40 tok/s e degraus redondos (40,
+  60, 80, 100, 120, 160, 200...); a escala só cresce durante a sessão, então o
+  arco não pula a cada amostra. O eixo Y do gráfico é recalculado para o pico
+  da janela exibida (**Turno** ou **Sessão**), com degraus a partir de 10 tok/s
+  e um pequeno respiro; ao trocar de janela ele também desce.
 - **Histórico**: gráfico de linha + área com toggle **Turno | Sessão**. No
-  turno, os últimos 60s são amostrados a 1 Hz; na sessão, um ponto exato por
-  passo concluído. A média aparece como linha tracejada.
+  turno, o eixo cobre o turno inteiro (amostras de 1 Hz durante o streaming e
+  um ponto exato por passo concluído); na sessão, um ponto exato por passo
+  concluído ao longo de toda a sessão. O eixo Y se ajusta à janela exibida e a
+  média dessa janela aparece como linha tracejada.
 - **Turno atual**: duração, output, 1º token, reasoning (tokens, tempo e
   participação no output) e tool calls com status, duração e argumento resumido.
 - **Sessão**: turnos, passos, tempo médio por resposta e por turno, tok/s
@@ -105,8 +109,7 @@ observabilidade desligada.
 
 - `mod+shift+s` — abrir Estatísticas.
 - `mod+shift+i` — abrir System prompt.
-- Menu do painel da sessão — entradas **Estatísticas**, **System prompt** e
-  **Ativar/Desativar observabilidade**.
+- Menu do painel da sessão — entradas **Estatísticas** e **System prompt**.
 - Paleta de comandos — **Ativar/Desativar observabilidade** (mostra um toast com
   o novo estado).
 
@@ -130,12 +133,16 @@ O plugin tem duas partes:
   o payload quando o hash não mudou.
 - **GUI** (`src/gui.tsx`): calcula métricas e histórico a partir de
   `session.server.data` e desenha o gauge/gráfico em SVG, sem biblioteca de
-  charts. O histórico da sessão vem de `session.context` (o histórico ativo,
-  depois da última compactação), mesclado com a janela viva da timeline. No
-  merge, mensagens da timeline **anteriores ao início do histórico ativo** são
-  descartadas: a timeline mantém o histórico antigo na tela, e reutilizá-lo
-  reintroduziria os totais que a compactação zerou. O painel também refaz o
-  fetch assim que uma compactação conclui, sem esperar o turno terminar.
+  charts. As métricas usam **dois recortes**:
+  - leitura (tok/s, turno atual, reasoning, histórico e totais da sessão): união
+    da timeline viva com `session.context`, **sem** descartar o histórico
+    anterior à última compactação — uma compactação não pode zerar a leitura;
+  - visão **Contexto** (composição e uso da janela): só o histórico ativo
+    devolvido por `session.context`, mesclado com a janela viva. Mensagens
+    anteriores ao início do histórico ativo ficam de fora, porque não vão no
+    próximo request.
+  O painel refaz o fetch de `session.context` assim que uma compactação conclui,
+  sem esperar o turno terminar.
 
 Store, scheduler e chave de observabilidade são **globais ao processo**
 (`globalThis.__opencodeStatsRuntime__`), não recriados a cada `setup`: um hot
@@ -157,8 +164,10 @@ mas não limpa o store; apenas desligar a observabilidade limpa.
 ## Limitações (v0)
 
 - Não inclui subagentes nos totais.
-- Os totais da sessão cobrem o **histórico ativo** (mensagens depois da última
-  compactação), não o arquivo inteiro.
+- Os totais da sessão e o turno/reasoning cobrem a **timeline** da sessão
+  (mantendo o histórico anterior à compactação). A visão **Contexto** usa só o
+  histórico ativo (mensagens depois da última compactação), que é o que o
+  próximo request enviaria.
 - A captura vê o `system` no momento em que o hook roda. Como o `stats` é
   carregado depois de `memory`, `notes` e `plans` (ordem alfabética), os blocos
   deles entram; um plugin carregado depois do `stats` pode ficar sem rótulo.
