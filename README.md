@@ -63,8 +63,9 @@ symlink, instala as dependências e compila o bundle da GUI.
 - **Sessão**: turnos, passos, tempo médio por resposta e por turno, tok/s
   médio/máximo, composição de tokens em duas visões — **Contexto** (padrão:
   prompt do último request concluído: input, ferramentas estimadas e cache; uso
-  da janela e composição do conteúdo por sistema, ferramentas (definições +
-  resultados) e conversa, com detalhamento do system prompt) e **Processados**
+  da janela e composição do conteúdo por sistema, reasoning, ferramentas
+  (definições + resultados) e conversa, com detalhamento do system prompt) e
+  **Processados**
   (todos os passos desde a última compactação: input, ferramentas estimadas,
   output, reasoning e cache) —, custo, taxa de sucesso e ranking de ferramentas,
   além de passos/tokens por modelo.
@@ -171,9 +172,10 @@ mas não limpa o store; apenas desligar a observabilidade limpa.
   ferramenta separadamente. Na visão **Contexto**, o total é o prompt do último
   request concluído (`input + cache`), sem output/reasoning. A barra da janela
   é empilhada por conteúdo: system prompt (estimado pelos bytes da captura ÷ 4),
-  ferramentas (definições de tools capturadas do request + resultados estimados)
-  e o restante (conversa). Quando o modelo é conhecido, a barra mostra o uso
-  (prompt ÷ `limit.context`) e só a parte preenchida é dividida nesses
+  reasoning (tokens de raciocínio dos passos anteriores, quando o provider os
+  reenvia), ferramentas (definições de tools capturadas do request + resultados
+  estimados) e o restante (conversa). Quando o modelo é conhecido, a barra mostra
+  o uso (prompt ÷ `limit.context`) e só a parte preenchida é dividida nesses
   segmentos; sem o limite, ela mostra apenas a composição. O system prompt é
   detalhado por parte logo abaixo. A barra de tipos de token
   (input/tools/output/reasoning/cache) aparece só na visão **Processados**.

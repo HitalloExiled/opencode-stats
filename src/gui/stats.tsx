@@ -564,20 +564,32 @@ export function StatsView(props: { session: MountedSession }) {
     // only the last step's.
     const system = Math.min(total, Math.ceil((capture()?.totalBytes ?? 0) / 4));
     const toolDefinitions = Math.ceil((capture()?.toolBytes ?? 0) / 4);
-    // The last request's own tool results were produced after it, so they are
-    // not in its prompt yet; subtract them from the accumulated estimate.
+    // The last request's own tool results and reasoning were produced after it,
+    // so they are not in its prompt yet; subtract them from the accumulated
+    // estimates. Prior reasoning is replayed by providers that keep it.
     const toolResults = Math.max(0, metrics.toolTokens - request.toolTokens);
-    const tools = Math.min(
+    const reasoning = Math.min(
       Math.max(0, total - system),
+      Math.max(0, metrics.tokens.reasoning - request.tokens.reasoning),
+    );
+    const tools = Math.min(
+      Math.max(0, total - system - reasoning),
       toolResults + toolDefinitions,
     );
-    const conversation = Math.max(0, total - system - tools);
+    const conversation = Math.max(0, total - system - reasoning - tools);
     const entries = [
       {
         key: "system",
         labelKey: "stats.contextSystem",
         value: system,
         color: "var(--stats-input)",
+        share: 0,
+      },
+      {
+        key: "reasoning",
+        labelKey: "stats.contextReasoning",
+        value: reasoning,
+        color: "var(--stats-reason)",
         share: 0,
       },
       {
