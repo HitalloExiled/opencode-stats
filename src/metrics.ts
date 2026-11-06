@@ -91,6 +91,8 @@ export type SessionMetrics = {
   steps: number;
   messages: number;
   tokens: TokenUsageInfo;
+  /** Estimated tokens returned by tools (content characters ÷ 4). */
+  toolTokens: number;
   cost: number;
   firstAt?: number | undefined;
   lastAt?: number | undefined;
@@ -166,6 +168,27 @@ function toolDetail(
     }
   }
   return undefined;
+}
+
+/**
+ * Estimated tokens a tool returned to the context, from its text content.
+ *
+ * Providers do not report tool-result tokens separately; the next request
+ * sends them back as input. Characters ÷ 4 is the same rough ratio the live
+ * tok/s estimate uses. File parts carry no content, so only text counts.
+ */
+export function toolResultTokens(
+  part: Extract<SessionMessageAssistant["content"][number], { type: "tool" }>,
+): number {
+  const state = part.state;
+  if (state.status !== "completed" && state.status !== "error") return 0;
+  const content = state.content;
+  if (!content) return 0;
+  let chars = 0;
+  for (const item of content) {
+    if (item.type === "text") chars += item.text.length;
+  }
+  return Math.ceil(chars / 4);
 }
 
 export function toolCallFromPart(
@@ -400,7 +423,11 @@ export function analyzeSession(messages: readonly SessionMessageInfo[]): Session
 
   const tools = new Map<string, ToolStat>();
   const models = new Map<string, ModelStat>();
+  let toolTokens = 0;
   for (const step of steps) {
+    for (const part of step.message.content) {
+      if (part.type === "tool") toolTokens += toolResultTokens(part);
+    }
     for (const call of step.toolCalls) {
       const stat = tools.get(call.name) ?? {
         name: call.name,
@@ -450,6 +477,7 @@ export function analyzeSession(messages: readonly SessionMessageInfo[]): Session
     steps: assistants.length,
     messages: messages.length,
     tokens,
+    toolTokens,
     cost,
     ...(firstAt !== undefined ? { firstAt } : {}),
     ...(lastAt !== undefined ? { lastAt } : {}),

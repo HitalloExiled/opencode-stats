@@ -50,6 +50,7 @@ const CSS = `
   --stats-output: var(--v2-icon-icon-accent, #4dc8b8);
   --stats-reason: #b49cff;
   --stats-cache: #7c7c7c;
+  --stats-tools: var(--v2-text-text-warning, #f0b44c);
   --stats-ok: var(--v2-text-text-success, #5fce7d);
   --stats-error: var(--v2-text-text-danger, #ef6b6b);
   --stats-run: var(--v2-text-text-info, #7db8ff);
@@ -374,9 +375,16 @@ export function StatsView(props: { session: MountedSession }) {
   });
 
   const tokenParts = createMemo(() => {
-    const tokens = sessionMetrics().tokens;
+    const metrics = sessionMetrics();
+    const tokens = metrics.tokens;
+    // Tool results ride inside the provider's input count. Carve the estimate
+    // out of input so the segments still sum to the provider total instead of
+    // counting the same tokens twice.
+    const toolTokens = Math.min(metrics.toolTokens, tokens.input);
+    const promptTokens = Math.max(0, tokens.input - toolTokens);
     const entries = [
-      { key: "input", value: tokens.input, color: "var(--stats-input)", share: 0 },
+      { key: "input", value: promptTokens, color: "var(--stats-input)", share: 0 },
+      { key: "toolResults", value: toolTokens, color: "var(--stats-tools)", share: 0 },
       { key: "output", value: tokens.output, color: "var(--stats-output)", share: 0 },
       { key: "reasoning", value: tokens.reasoning, color: "var(--stats-reason)", share: 0 },
       {
@@ -390,7 +398,7 @@ export function StatsView(props: { session: MountedSession }) {
     for (const entry of entries) {
       entry.share = total > 0 ? (entry.value / total) * 100 : 0;
     }
-    return { entries, total };
+    return { entries };
   });
 
   const maxToolCalls = createMemo(() =>

@@ -74,6 +74,7 @@ const tool = (input: {
   completed?: number;
   status?: "completed" | "error" | "running";
   input?: Record<string, unknown>;
+  text?: string;
 }): SessionMessageAssistantTool => {
   const status = input.status ?? "completed";
   const state =
@@ -81,13 +82,16 @@ const tool = (input: {
       ? {
           status: "completed" as const,
           input: input.input ?? { filePath: "src/a.ts" },
-          content: [{ type: "text" as const, text: "ok" }],
+          content: [{ type: "text" as const, text: input.text ?? "ok" }],
         }
       : status === "error"
         ? {
             status: "error" as const,
             input: input.input ?? { filePath: "src/a.ts" },
             error: { type: "error", message: "boom" },
+            ...(input.text !== undefined
+              ? { content: [{ type: "text" as const, text: input.text }] }
+              : {}),
           }
         : {
             status: "running" as const,
@@ -315,6 +319,24 @@ describe("analyzeSession", () => {
     expect(metrics.models).toHaveLength(1);
     expect(metrics.models[0]!.steps).toBe(2);
     expect(metrics.models[0]!.tokens.output).toBe(30);
+  });
+
+  test("estimates tool result tokens from tool content", () => {
+    const messages = [
+      user("u1", 1000),
+      assistant({
+        id: "a1",
+        created: 1100,
+        content: [
+          tool({ id: "t1", name: "read", created: 1200, text: "abcdefgh" }),
+          tool({ id: "t2", name: "bash", created: 1300, status: "error", text: "12345" }),
+          tool({ id: "t3", name: "grep", created: 1400, status: "running" }),
+        ],
+      }),
+    ];
+
+    // 8 chars -> 2 tokens, 5 chars -> 2 tokens, running content -> 0.
+    expect(analyzeSession(messages).toolTokens).toBe(4);
   });
 
   test("includes compaction tokens and cost", () => {
