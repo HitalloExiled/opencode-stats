@@ -325,6 +325,28 @@ export function StatsView(props: { session: MountedSession }) {
       { defer: true },
     ),
   );
+
+  // A compaction changes the active history. Refresh as soon as it completes so
+  // the totals drop to the new range instead of waiting for the whole turn to
+  // end (auto-compaction happens mid-turn).
+  createEffect(
+    on(
+      () => {
+        const list = loaded();
+        for (let index = list.length - 1; index >= 0; index--) {
+          const message = list[index];
+          if (message?.type === "compaction" && message.status === "completed") {
+            return String(message.id);
+          }
+        }
+        return undefined;
+      },
+      (id, previous) => {
+        if (id && id !== previous) void refreshFull(true);
+      },
+      { defer: true },
+    ),
+  );
   onCleanup(() => controller?.abort());
 
   const toggle = async (next: boolean) => {

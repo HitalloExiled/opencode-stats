@@ -124,7 +124,11 @@ O plugin tem duas partes:
 - **GUI** (`src/gui.tsx`): calcula métricas e histórico a partir de
   `session.server.data` e desenha o gauge/gráfico em SVG, sem biblioteca de
   charts. O histórico da sessão vem de `session.context` (o histórico ativo,
-  depois da última compactação), mesclado com a janela viva da timeline.
+  depois da última compactação), mesclado com a janela viva da timeline. No
+  merge, mensagens da timeline **anteriores ao início do histórico ativo** são
+  descartadas: a timeline mantém o histórico antigo na tela, e reutilizá-lo
+  reintroduziria os totais que a compactação zerou. O painel também refaz o
+  fetch assim que uma compactação conclui, sem esperar o turno terminar.
 
 Store, scheduler e chave de observabilidade são **globais ao processo**
 (`globalThis.__opencodeStatsRuntime__`), não recriados a cada `setup`: um hot

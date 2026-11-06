@@ -371,6 +371,28 @@ describe("mergeMessages", () => {
     expect(merged.map((message) => message.id)).toEqual(["a1", "a2"]);
   });
 
+  test("drops timeline messages before the active history", () => {
+    const oldUser = user("u1", 1000);
+    const oldAssistant = assistant({ id: "a1", created: 1100 });
+    const compaction = {
+      type: "compaction",
+      id: "c1",
+      time: { created: 5000 },
+      status: "completed",
+      reason: "auto",
+      summary: "summary",
+    } as SessionMessageInfo;
+    const active = assistant({ id: "a2", created: 6000 });
+    const later = user("u2", 7000);
+
+    const merged = mergeMessages(
+      [compaction, active],
+      [oldUser, oldAssistant, compaction, active, later],
+    );
+
+    expect(merged.map((message) => message.id)).toEqual(["c1", "a2", "u2"]);
+  });
+
   test("returns the live window when there is no full history", () => {
     const message = assistant({ id: "a1" });
     expect(mergeMessages([], [message])).toEqual([message]);

@@ -512,8 +512,20 @@ export function mergeMessages(
 ): SessionMessageInfo[] {
   if (full.length === 0) return [...loaded];
   const byID = new Map<string, SessionMessageInfo>();
-  for (const message of full) byID.set(message.id, message);
-  for (const message of loaded) byID.set(message.id, message);
+  let activeFrom = Number.POSITIVE_INFINITY;
+  for (const message of full) {
+    byID.set(message.id, message);
+    if (message.time.created < activeFrom) activeFrom = message.time.created;
+  }
+  // `session.context` returns the active history: all messages after the last
+  // compaction. The timeline keeps the pre-compaction window on screen, so a
+  // plain union would re-add those old messages and restore the totals the
+  // compaction reset. Only messages inside the active range (or newer) join,
+  // and a live copy still wins by id.
+  for (const message of loaded) {
+    if (byID.has(message.id)) byID.set(message.id, message);
+    else if (message.time.created >= activeFrom) byID.set(message.id, message);
+  }
   return Array.from(byID.values()).sort((a, b) => {
     const delta = a.time.created - b.time.created;
     return delta !== 0 ? delta : a.id.localeCompare(b.id);
