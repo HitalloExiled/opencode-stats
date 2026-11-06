@@ -161,7 +161,10 @@ const CSS = `
 .stats-context-head b.is-warn { color: var(--v2-text-text-warning, #f0b44c); }
 .stats-context-head b.is-danger { color: var(--stats-error); }
 .stats-context-sep { color: var(--v2-text-text-faint, #6e6e6e); }
-.stats-context-bar { display: flex; height: 6px; border-radius: 999px; background: var(--v2-background-bg-layer-03, #2a2a2a); border: 1px solid var(--v2-border-border-muted, #303030); overflow: hidden; }
+.stats-context-bar { position: relative; display: flex; height: 6px; border-radius: 999px; background: var(--v2-background-bg-layer-03, #2a2a2a); border: 1px solid var(--v2-border-border-muted, #303030); overflow: hidden; }
+.stats-context-marker { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--v2-text-text-warning, #f0b44c); box-shadow: 0 0 0 1px color-mix(in srgb, var(--v2-background-bg-layer-02, #1a1a1a) 70%, transparent); z-index: 1; }
+.stats-context-scale { position: relative; height: 10px; margin-top: 1px; }
+.stats-context-marker-label { position: absolute; top: 0; transform: translateX(-50%); color: var(--v2-text-text-warning, #f0b44c); font-size: 8px; font-weight: 650; letter-spacing: 0.3px; text-transform: uppercase; white-space: nowrap; }
 .stats-context-used { display: flex; height: 100%; border-radius: 999px; overflow: hidden; transition: width 200ms ease; }
 .stats-context-seg { height: 100%; min-width: 0; }
 .stats-context-subhead { margin-top: 2px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
@@ -534,15 +537,38 @@ export function StatsView(props: { session: MountedSession }) {
     return { entries, total, hasRequest: true };
   });
 
-  const contextLimit = createMemo(() => {
+  const modelLimit = createMemo(() => {
     const request = sessionMetrics().lastRequest;
     if (!request) return undefined;
     const models = data.location.model.list(session.location);
     const entry = models?.find(
       (item) => item.providerID === request.model.providerID && item.id === request.model.id,
     );
-    const limit = entry?.limit.context;
-    return limit !== undefined && limit > 0 ? limit : undefined;
+    return entry?.limit;
+  });
+
+  const contextLimit = createMemo(() => {
+    const limit = modelLimit();
+    if (!limit) return undefined;
+    // The server caps the prompt at the smaller of the input and context
+    // windows; mirror that so the marker lines up with the real trigger.
+    const window =
+      limit.input && limit.context
+        ? Math.min(limit.input, limit.context)
+        : limit.input || limit.context;
+    return window > 0 ? window : undefined;
+  });
+
+  const compactionAt = createMemo(() => {
+    const window = contextLimit();
+    if (window === undefined) return undefined;
+    // Mirrors the server's calculateCeiling: 15% of the window, at least 16k
+    // when the window has room for two reserves.
+    const reserve = Math.max(
+      Math.floor(window * 0.15),
+      window >= 2 * 16_000 ? 16_000 : 0,
+    );
+    return Math.min(1, Math.max(0, (window - reserve) / window));
   });
 
   const contextUsage = createMemo(() => {
@@ -1007,7 +1033,33 @@ export function StatsView(props: { session: MountedSession }) {
                     )}
                   </For>
                 </span>
+                <Show when={compactionAt() !== undefined}>
+                  <span
+                    class="stats-context-marker"
+                    title={t(
+                      "stats.compactionAt",
+                      formatPercent((compactionAt() ?? 0) * 100, locale, 0),
+                    )}
+                    style={{ left: `${(compactionAt() ?? 0) * 100}%` }}
+                  />
+                </Show>
               </div>
+              <Show when={compactionAt() !== undefined}>
+                <div class="stats-context-scale">
+                  <span
+                    class="stats-context-marker-label"
+                    title={t(
+                      "stats.compactionAt",
+                      formatPercent((compactionAt() ?? 0) * 100, locale, 0),
+                    )}
+                    style={{
+                      left: `${Math.min(90, Math.max(10, (compactionAt() ?? 0) * 100))}%`,
+                    }}
+                  >
+                    {t("stats.compactionPoint")}
+                  </span>
+                </div>
+              </Show>
               <div class="stats-legend">
                 <For each={contextSources().entries}>
                   {(entry) => (

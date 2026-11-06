@@ -177,7 +177,9 @@ mas não limpa o store; apenas desligar a observabilidade limpa.
   estimados) e o restante (conversa). Quando o modelo é conhecido, a barra mostra
   o uso (prompt ÷ `limit.context`) e só a parte preenchida é dividida nesses
   segmentos; sem o limite, ela mostra apenas a composição. O system prompt é
-  detalhado por parte logo abaixo. A barra de tipos de token
+  detalhado por parte logo abaixo. A barra também marca o **ponto de
+  compactação automática** (janela − 15%, mínimo de 16k), espelhando o cálculo
+  do servidor. A barra de tipos de token
   (input/tools/output/reasoning/cache) aparece só na visão **Processados**.
 - A leitura do interruptor no `ctx.storage` é assíncrona. Um request que chegue
   antes da hidratação pode ser capturado mesmo com o estado persistido em
