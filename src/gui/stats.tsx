@@ -221,7 +221,7 @@ const STOP = "M4.5 4.5h7v7h-7z";
 // two selections are viewing preferences, so they live outside the component
 // instead of snapping back to the defaults on every remount.
 const [range, setRange] = createSignal<ChartRange>("turn");
-const [tokenView, setTokenView] = createSignal<"processed" | "context">("processed");
+const [tokenView, setTokenView] = createSignal<"processed" | "context">("context");
 
 export function StatsView(props: { session: MountedSession }) {
   const t = useT();
@@ -429,7 +429,10 @@ export function StatsView(props: { session: MountedSession }) {
     buffer = createRingBuffer(300);
     finalizedStep = undefined;
     setLiveSamples([]);
-    if (next) void refreshFull();
+    if (next) {
+      void refreshFull();
+      void loadCapture();
+    }
   };
 
   const currentRate = createMemo(() => {
@@ -883,17 +886,17 @@ export function StatsView(props: { session: MountedSession }) {
             <div class="stats-token-view" role="group" aria-label={t("stats.tokenComposition")}>
               <button
                 type="button"
-                classList={{ "is-active": tokenView() === "processed" }}
-                onClick={() => setTokenView("processed")}
-              >
-                {t("stats.tokenProcessed")}
-              </button>
-              <button
-                type="button"
                 classList={{ "is-active": tokenView() === "context" }}
                 onClick={() => setTokenView("context")}
               >
                 {t("stats.tokenContext")}
+              </button>
+              <button
+                type="button"
+                classList={{ "is-active": tokenView() === "processed" }}
+                onClick={() => setTokenView("processed")}
+              >
+                {t("stats.tokenProcessed")}
               </button>
             </div>
           </div>

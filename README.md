@@ -61,13 +61,13 @@ symlink, instala as dependências e compila o bundle da GUI.
 - **Turno atual**: duração, output, 1º token, reasoning (tokens, tempo e
   participação no output) e tool calls com status, duração e argumento resumido.
 - **Sessão**: turnos, passos, tempo médio por resposta e por turno, tok/s
-  médio/máximo, composição de tokens em duas visões — **Processados** (todos os
-  passos desde a última compactação: input, ferramentas estimadas, output,
-  reasoning e cache) e **Contexto** (prompt do último request concluído: input,
-  ferramentas estimadas e cache; uso da janela e composição do conteúdo por
-  sistema, resultados de tools e conversa/definições, com detalhamento do system
-  prompt) —, custo, taxa de sucesso e ranking de ferramentas, além de
-  passos/tokens por modelo.
+  médio/máximo, composição de tokens em duas visões — **Contexto** (padrão:
+  prompt do último request concluído: input, ferramentas estimadas e cache; uso
+  da janela e composição do conteúdo por sistema, resultados de tools e
+  conversa/definições, com detalhamento do system prompt) e **Processados**
+  (todos os passos desde a última compactação: input, ferramentas estimadas,
+  output, reasoning e cache) —, custo, taxa de sucesso e ranking de ferramentas,
+  além de passos/tokens por modelo.
 
 O tok/s usa a mesma fórmula do rodapé do TUI: `(output + reasoning) /
 (streamed - created)` por passo, agregado antes de dividir. O tempo de
