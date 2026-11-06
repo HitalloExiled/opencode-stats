@@ -486,6 +486,21 @@ export function StatsView(props: { session: MountedSession }) {
     };
   });
 
+  // Follow new tool calls only while the list is already at the bottom; if the
+  // user scrolled up to read an earlier call, leave their position alone.
+  let toolList: HTMLDivElement | undefined;
+  let stickToBottom = true;
+  createEffect(
+    on(
+      () => `${turnMetrics()?.promptID ?? ""}:${turnTools().calls.length}`,
+      () => {
+        const element = toolList;
+        if (!element || !stickToBottom) return;
+        element.scrollTop = element.scrollHeight;
+      },
+    ),
+  );
+
   const tokenParts = createMemo(() => {
     const metrics = sessionMetrics();
 
@@ -873,7 +888,15 @@ export function StatsView(props: { session: MountedSession }) {
             </span>
           </div>
 
-          <div class="stats-tool-list">
+          <div
+            class="stats-tool-list"
+            ref={toolList}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              stickToBottom =
+                element.scrollHeight - element.scrollTop - element.clientHeight <= 4;
+            }}
+          >
             <Show
               when={turnTools().calls.length > 0}
               fallback={<div class="stats-tool-empty">{t("stats.noToolCalls")}</div>}
