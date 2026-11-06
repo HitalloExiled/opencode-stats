@@ -35,7 +35,7 @@ const KEY = "__opencodeStatsRuntime__" as const;
  * shape must replace the instance: otherwise new handlers call methods the old
  * store never had (e.g. `peek`). Bump this whenever that contract changes.
  */
-const RUNTIME_VERSION = 2;
+const RUNTIME_VERSION = 3;
 
 type Globals = typeof globalThis & {
   __opencodeStatsRuntime__?: StatsRuntime;

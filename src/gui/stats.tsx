@@ -561,7 +561,13 @@ export function StatsView(props: { session: MountedSession }) {
     // from the tool content estimate. Everything left is conversation plus the
     // tool definitions, which the provider counts but does not break out.
     const system = Math.min(total, Math.ceil((capture()?.totalBytes ?? 0) / 4));
-    const tools = Math.min(Math.max(0, total - system), request.toolTokens);
+    // Tool schemas are sent on every request; add them to the tool footprint
+    // along with the returned content.
+    const toolDefinitions = Math.ceil((capture()?.toolBytes ?? 0) / 4);
+    const tools = Math.min(
+      Math.max(0, total - system),
+      request.toolTokens + toolDefinitions,
+    );
     const conversation = Math.max(0, total - system - tools);
     const entries = [
       {

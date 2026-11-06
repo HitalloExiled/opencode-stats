@@ -38,6 +38,22 @@ describe("hashPrompt", () => {
 });
 
 describe("createCaptureStore", () => {
+  test("includes tool definitions in the hash and byte count", () => {
+    const store = createCaptureStore({ now });
+    const tools = {
+      read: { description: "Read a file", input: { type: "object" } },
+    };
+
+    const withTools = store.capture({ ...input("s1", "prompt"), tools });
+    expect(withTools.toolBytes).toBe(
+      new TextEncoder().encode(JSON.stringify(tools)).length,
+    );
+
+    const withoutTools = store.capture({ ...input("s1", "prompt"), tools: {} });
+    expect(withoutTools.toolBytes).toBe(2); // "{}"
+    expect(withoutTools.hash).not.toBe(withTools.hash);
+  });
+
   test("captures, deduplicates by hash and counts requests", () => {
     clock = 1000;
     const store = createCaptureStore({ now });

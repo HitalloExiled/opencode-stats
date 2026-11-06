@@ -96,8 +96,10 @@ test/                    # bun:test das funções puras
   - demais `core/*` → grupo `fixed`;
   - partes extras → `dynamic`, com detecção de tags de plugins.
 - `src/capture.ts` guarda a última captura por sessão em memória, deduplica por
-  SHA-256, conta requests e aplica LRU por número de sessões e bytes totais.
-  `peek` lê sem tocar no LRU (usado pelo status). Não persiste nada.
+  SHA-256 (incluindo as definições de tools), conta requests e aplica LRU por
+  número de sessões e bytes totais. Guarda os bytes do system prompt (`totalBytes`)
+  e das definições de tools (`toolBytes`). `peek` lê sem tocar no LRU (usado pelo
+  status). Não persiste nada.
 
 A ordem de carregamento importa: `stats` é carregado depois de `memory`,
 `notes` e `plans` (ordem alfabética dos diretórios), então vê os blocos que eles

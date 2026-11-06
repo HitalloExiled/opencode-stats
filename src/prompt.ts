@@ -26,6 +26,8 @@ export type CaptureInput = {
   agent: string;
   model: PromptCapture["model"];
   system: readonly SystemPartLike[];
+  /** Tool definitions sent with the request, when the runtime provides them. */
+  tools?: Record<string, unknown> | undefined;
   capturedAt?: number | undefined;
 };
 

@@ -50,6 +50,8 @@ export type PromptCapture = {
   model: PromptModel;
   parts: readonly PromptPart[];
   totalBytes: number;
+  /** Bytes of the tool definitions sent alongside `system`. */
+  toolBytes: number;
   hash: string;
   requestCount: number;
 };
@@ -125,6 +127,7 @@ export const promptCaptureSchema = Schema.Struct({
   model: promptModelSchema,
   parts: Schema.Array(promptPartSchema),
   totalBytes: Schema.Number,
+  toolBytes: Schema.Number,
   hash: Schema.String,
   requestCount: Schema.Number,
 });

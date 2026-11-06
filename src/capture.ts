@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 
 import type { PromptCapture } from "./gui/contract.js";
-import { buildPromptParts, type CaptureInput } from "./prompt.js";
+import { buildPromptParts, byteLength, type CaptureInput } from "./prompt.js";
 
 export type CaptureStoreOptions = {
   /** Maximum sessions kept in memory. Defaults to 50. */
@@ -78,7 +78,15 @@ export function createCaptureStore(options: CaptureStoreOptions = {}): CaptureSt
   const capture = (input: CaptureInput): PromptCapture => {
     const sessionID = String(input.sessionID);
     const { parts, totalBytes } = buildPromptParts(input.system);
-    const hash = hashPrompt(parts);
+    // Tool schemas are sent alongside `system`, not inside it; include them in
+    // the dedupe hash so a tool-set change creates a new capture.
+    const toolsText = JSON.stringify(input.tools ?? {});
+    const toolBytes = byteLength(toolsText);
+    const hash = createHash("sha256")
+      .update(hashPrompt(parts))
+      .update("\u0000")
+      .update(toolsText)
+      .digest("hex");
     const previous = sessions.get(sessionID);
     const requestCount = (previous?.requestCount ?? 0) + 1;
     const capturedAt = input.capturedAt ?? clock();
@@ -99,6 +107,7 @@ export function createCaptureStore(options: CaptureStoreOptions = {}): CaptureSt
             model: { ...input.model },
             parts,
             totalBytes,
+            toolBytes,
             hash,
             requestCount,
           };

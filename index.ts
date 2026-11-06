@@ -55,6 +55,8 @@ function capture(event: SessionContext): void {
       },
       // Shallow copy only: the array is cheap, the strings are immutable.
       system: event.system.slice(),
+      // Tool schemas are part of the prompt but live outside `system`.
+      tools: event.tools,
     });
   } catch (error) {
     // Never break a model request because the prompt viewer failed.
