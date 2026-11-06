@@ -222,11 +222,3 @@ export function buildPromptParts(system: readonly SystemPartLike[]): {
   const totalBytes = parts.reduce((sum, part) => sum + part.bytes, 0);
   return { parts, totalBytes };
 }
-
-/** Convenience for tests and the capture store. */
-export function captureFromInput(input: CaptureInput): {
-  parts: PromptPart[];
-  totalBytes: number;
-} {
-  return buildPromptParts(input.system);
-}

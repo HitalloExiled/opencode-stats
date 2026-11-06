@@ -66,7 +66,3 @@ export function formatClock(epoch: number, locale: string): string {
     minute: "2-digit",
   }).format(new Date(epoch));
 }
-
-export function formatElapsed(ms: number | undefined): string {
-  return formatDuration(ms);
-}

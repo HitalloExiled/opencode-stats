@@ -20,7 +20,6 @@ import {
   findTurns,
   mergeMessages,
   stepMetrics,
-  type ToolCall,
 } from "../src/metrics";
 
 type AssistantInput = {
@@ -428,7 +427,3 @@ describe("mergeMessages", () => {
     expect(mergeMessages([], [message])).toEqual([message]);
   });
 });
-
-// Keep the ToolCall import used so the helper type stays checked.
-const _toolType: ToolCall = { id: "t", name: "read", status: "ok" };
-void _toolType;

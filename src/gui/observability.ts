@@ -17,7 +17,6 @@ import { StatsRpc, type ObservabilityStatus } from "./contract";
 
 const [status, setStatus] = createSignal<ObservabilityStatus | null>(null);
 const [busy, setBusy] = createSignal(false);
-const [error, setError] = createSignal<string | null>(null);
 const [hidden, setHidden] = createSignal(false);
 
 let listening = false;
@@ -47,10 +46,6 @@ function ensureVisibility(): void {
   });
 }
 
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function options(session: MountedSession) {
   return { location: { directory: session.directory } };
 }
@@ -66,9 +61,8 @@ export function refreshObservability(session: MountedSession): Promise<void> {
         .rpc(StatsRpc)
         .observability({}, options(session));
       setStatus(result);
-      setError(null);
-    } catch (cause) {
-      setError(describe(cause));
+    } catch {
+      // Keep the last known status; the panel still works with it.
     } finally {
       inflight = undefined;
       inflightDirectory = undefined;
@@ -84,15 +78,13 @@ export async function setObservability(
 ): Promise<ObservabilityStatus | null> {
   if (!session.id || busy()) return null;
   setBusy(true);
-  setError(null);
   try {
     const result = await session.server.client
       .rpc(StatsRpc)
       .setObservability({ enabled }, options(session));
     setStatus(result);
     return result;
-  } catch (cause) {
-    setError(describe(cause));
+  } catch {
     return null;
   } finally {
     setBusy(false);
@@ -100,23 +92,18 @@ export async function setObservability(
 }
 
 /** Synchronous read for callers outside a component (commands, menu items). */
-export const observabilityStatus = () => status();
 export const observabilityEnabled = () => status()?.enabled ?? true;
-export const observabilityBusy = () => busy();
 
-export function useObservability(session: MountedSession) {  ensureVisibility();
+export function useObservability(session: MountedSession) {
+  ensureVisibility();
   onMount(() => {
     void refreshObservability(session);
   });
   return {
-    status,
     busy,
-    error,
     hidden,
     /** Optimistic default: the pipeline starts enabled until storage says otherwise. */
     enabled: () => status()?.enabled ?? true,
-    ready: () => status() !== null,
-    refresh: () => refreshObservability(session),
     setEnabled: (enabled: boolean) => setObservability(session, enabled),
   };
 }
