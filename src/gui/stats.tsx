@@ -354,7 +354,11 @@ export function StatsView(props: { session: MountedSession }) {
     return values.reduce((sum, value) => sum + value, 0) / values.length;
   });
 
-  const isLiveRate = createMemo(() => turnMetrics()?.liveRate !== undefined);
+  // The tilde means "turn in progress". Tying it to the live estimate made it
+  // blink between estimate and exact at every step boundary (tool execution
+  // happens between steps), which looked like a glitch. While the session runs
+  // the gauge shows `~`; when it goes idle the exact value is shown.
+  const isLiveRate = createMemo(() => running() && currentRate() !== undefined);
   const turnSamples = createMemo(() => samplesForTurn(lastTurn(), liveSamples()));
 
   const reasoningShare = createMemo(() => {

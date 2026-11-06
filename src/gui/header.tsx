@@ -82,7 +82,9 @@ export function StatsStrip(props: { session: MountedSession; active: boolean }) 
     return metrics.steps[metrics.steps.length - 1]?.rate ?? metrics.rate;
   });
 
-  const live = createMemo(() => running() && turn()?.liveRate !== undefined);
+  // The dot and the tilde follow the turn, not the step: a tool execution
+  // between two streaming steps must not flash the live indicator off.
+  const live = createMemo(() => running() && rate() !== undefined);
   const tools = createMemo(() => turn()?.toolCalls.length ?? 0);
   const reasoning = createMemo(() => turn()?.reasoningTokens ?? 0);
   const duration = createMemo(() => turn()?.durationMs);
