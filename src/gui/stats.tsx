@@ -553,20 +553,23 @@ export function StatsView(props: { session: MountedSession }) {
   });
 
   const contextSources = createMemo(() => {
-    const request = sessionMetrics().lastRequest;
+    const metrics = sessionMetrics();
+    const request = metrics.lastRequest;
     if (!request) return { entries: [], total: 0 };
     const tokens = request.tokens;
     const total = tokens.input + tokens.cache.read + tokens.cache.write;
-    // The system prompt comes from the capture (bytes ÷ 4) and tool results
-    // from the tool content estimate. Everything left is conversation plus the
-    // tool definitions, which the provider counts but does not break out.
+    // The system prompt comes from the capture (bytes ÷ 4). Tool schemas are
+    // sent on every request, and the prompt carries the results of every tool
+    // call in the active history, so use the accumulated estimate instead of
+    // only the last step's.
     const system = Math.min(total, Math.ceil((capture()?.totalBytes ?? 0) / 4));
-    // Tool schemas are sent on every request; add them to the tool footprint
-    // along with the returned content.
     const toolDefinitions = Math.ceil((capture()?.toolBytes ?? 0) / 4);
+    // The last request's own tool results were produced after it, so they are
+    // not in its prompt yet; subtract them from the accumulated estimate.
+    const toolResults = Math.max(0, metrics.toolTokens - request.toolTokens);
     const tools = Math.min(
       Math.max(0, total - system),
-      request.toolTokens + toolDefinitions,
+      toolResults + toolDefinitions,
     );
     const conversation = Math.max(0, total - system - tools);
     const entries = [
