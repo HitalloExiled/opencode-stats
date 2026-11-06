@@ -217,6 +217,12 @@ const CHART = "M2 13V9m4 4V5m4 8V2m4 11V7";
 const PLAY = "M4.8 2.7 13 8l-8.2 5.3V2.7Z";
 const STOP = "M4.5 4.5h7v7h-7z";
 
+// The panel content remounts when its tab or the routed turn changes; these
+// two selections are viewing preferences, so they live outside the component
+// instead of snapping back to the defaults on every remount.
+const [range, setRange] = createSignal<ChartRange>("turn");
+const [tokenView, setTokenView] = createSignal<"processed" | "context">("processed");
+
 export function StatsView(props: { session: MountedSession }) {
   const t = useT();
   const locale = useLocale();
@@ -235,9 +241,7 @@ export function StatsView(props: { session: MountedSession }) {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [now, setNow] = createSignal(Date.now());
-  const [range, setRange] = createSignal<ChartRange>("turn");
   const [scaleMax, setScaleMax] = createSignal(40);
-  const [tokenView, setTokenView] = createSignal<"processed" | "context">("processed");
   const [capture, setCapture] = createSignal<PromptCapture | null>(null);
 
   const messages = createMemo(() => mergeMessages(full(), loaded()));
