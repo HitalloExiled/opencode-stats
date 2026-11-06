@@ -37,6 +37,8 @@ export type StepMetrics = {
   rate?: number | undefined;
   outputTokens: number;
   reasoningTokens: number;
+  /** Estimated tokens of the reasoning text (characters ÷ 4). */
+  reasoningTextTokens: number;
   /** Estimated tokens returned by this step's tools. */
   toolTokens: number;
   reasoningMs: number;
@@ -92,6 +94,8 @@ export type ModelStat = {
 export type RequestUsage = {
   tokens: TokenUsageInfo;
   toolTokens: number;
+  /** Estimated reasoning-text tokens of the step, used when the provider reports none. */
+  reasoningTextTokens: number;
   /** Model that served the request, used to look up its context-window limit. */
   model: ModelRef;
 };
@@ -103,6 +107,8 @@ export type SessionMetrics = {
   tokens: TokenUsageInfo;
   /** Estimated tokens returned by tools (content characters ÷ 4). */
   toolTokens: number;
+  /** Estimated tokens of all reasoning text (characters ÷ 4), a fallback. */
+  reasoningTextTokens: number;
   /** Usage of the last completed request in the active history. */
   lastRequest?: RequestUsage | undefined;
   cost: number;
@@ -236,12 +242,14 @@ export function stepMetrics(message: SessionMessageAssistant): StepMetrics {
     streamMs !== undefined && streamMs > 0 && output > 0 ? output / (streamMs / 1000) : undefined;
 
   let reasoningMs = 0;
+  let reasoningChars = 0;
   let firstTokenMs: number | undefined;
   const toolCalls: ToolCall[] = [];
   let toolTokens = 0;
 
   for (const part of message.content) {
     if (part.type === "reasoning") {
+      reasoningChars += part.text.length;
       const started = part.time?.created;
       const ended = part.time?.completed;
       if (started !== undefined && ended !== undefined) reasoningMs += Math.max(0, ended - started);
@@ -266,6 +274,7 @@ export function stepMetrics(message: SessionMessageAssistant): StepMetrics {
     ...(rate !== undefined ? { rate } : {}),
     outputTokens: output,
     reasoningTokens: reasoning,
+    reasoningTextTokens: Math.ceil(reasoningChars / 4),
     toolTokens,
     reasoningMs,
     ...(firstTokenMs !== undefined ? { firstTokenMs } : {}),
@@ -439,13 +448,16 @@ export function analyzeSession(messages: readonly SessionMessageInfo[]): Session
   const tools = new Map<string, ToolStat>();
   const models = new Map<string, ModelStat>();
   let toolTokens = 0;
+  let reasoningTextTokens = 0;
   let lastRequest: RequestUsage | undefined;
   for (const step of steps) {
     toolTokens += step.toolTokens;
+    reasoningTextTokens += step.reasoningTextTokens;
     if (step.message.tokens && step.message.time.completed !== undefined) {
       lastRequest = {
         tokens: step.message.tokens,
         toolTokens: step.toolTokens,
+        reasoningTextTokens: step.reasoningTextTokens,
         model: step.message.model,
       };
     }
@@ -512,6 +524,7 @@ export function analyzeSession(messages: readonly SessionMessageInfo[]): Session
     ...(rate !== undefined ? { rate } : {}),
     ...(maxRate !== undefined ? { maxRate } : {}),
     reasoningMs: steps.reduce((sum, step) => sum + step.reasoningMs, 0),
+    reasoningTextTokens,
     toolCalls: steps.flatMap((step) => step.toolCalls),
     tools: toolList,
     models: Array.from(models.values()).sort((a, b) => b.steps - a.steps || a.label.localeCompare(b.label)),

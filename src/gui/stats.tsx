@@ -594,9 +594,19 @@ export function StatsView(props: { session: MountedSession }) {
     // so they are not in its prompt yet; subtract them from the accumulated
     // estimates. Prior reasoning is replayed by providers that keep it.
     const toolResults = Math.max(0, metrics.toolTokens - request.toolTokens);
+    const reportedReasoning = Math.max(
+      0,
+      metrics.tokens.reasoning - request.tokens.reasoning,
+    );
+    const estimatedReasoning = Math.max(
+      0,
+      metrics.reasoningTextTokens - request.reasoningTextTokens,
+    );
+    // Providers that report reasoning tokens give the exact count; otherwise
+    // estimate from the reasoning text that is still in the active history.
     const reasoning = Math.min(
       Math.max(0, total - system),
-      Math.max(0, metrics.tokens.reasoning - request.tokens.reasoning),
+      reportedReasoning > 0 ? reportedReasoning : estimatedReasoning,
     );
     const tools = Math.min(
       Math.max(0, total - system - reasoning),

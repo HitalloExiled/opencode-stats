@@ -131,6 +131,8 @@ describe("stepMetrics", () => {
     expect(step.outputTokens).toBe(26);
     expect(step.reasoningTokens).toBe(6);
     expect(step.reasoningMs).toBe(700);
+    // "thinking" is 8 characters; the text estimate is 2 tokens.
+    expect(step.reasoningTextTokens).toBe(2);
     expect(step.firstTokenMs).toBe(100);
   });
 
