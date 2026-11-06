@@ -134,6 +134,7 @@ const CSS = `
 .stats-legend-item { display: inline-flex; align-items: center; gap: 4px; }
 .stats-legend-swatch { width: 7px; height: 7px; border-radius: 2px; }
 .stats-legend b { color: var(--v2-text-text-muted, #9b9b9b); font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats-legend-share { color: var(--v2-text-text-faint, #6e6e6e); font-variant-numeric: tabular-nums; }
 .stats-table { display: flex; flex-direction: column; gap: 3px; }
 .stats-table-row { display: grid; grid-template-columns: minmax(0, 1fr) 50px auto; gap: 9px; align-items: center; padding: 3px 2px; font-size: 10.5px; }
 .stats-table-name { color: var(--v2-text-text-muted, #9b9b9b); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -375,12 +376,20 @@ export function StatsView(props: { session: MountedSession }) {
   const tokenParts = createMemo(() => {
     const tokens = sessionMetrics().tokens;
     const entries = [
-      { key: "input", value: tokens.input, color: "var(--stats-input)" },
-      { key: "output", value: tokens.output, color: "var(--stats-output)" },
-      { key: "reasoning", value: tokens.reasoning, color: "var(--stats-reason)" },
-      { key: "cache", value: tokens.cache.read + tokens.cache.write, color: "var(--stats-cache)" },
+      { key: "input", value: tokens.input, color: "var(--stats-input)", share: 0 },
+      { key: "output", value: tokens.output, color: "var(--stats-output)", share: 0 },
+      { key: "reasoning", value: tokens.reasoning, color: "var(--stats-reason)", share: 0 },
+      {
+        key: "cache",
+        value: tokens.cache.read + tokens.cache.write,
+        color: "var(--stats-cache)",
+        share: 0,
+      },
     ];
     const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+    for (const entry of entries) {
+      entry.share = total > 0 ? (entry.value / total) * 100 : 0;
+    }
     return { entries, total };
   });
 
@@ -660,8 +669,9 @@ export function StatsView(props: { session: MountedSession }) {
               {(entry) => (
                 <span
                   class="stats-token-seg"
+                  title={`${t(`stats.${entry.key}`)}: ${formatTokens(entry.value, locale)} · ${formatPercent(entry.share, locale)}`}
                   style={{
-                    width: `${tokenParts().total > 0 ? (entry.value / tokenParts().total) * 100 : 0}%`,
+                    width: `${entry.share}%`,
                     background: entry.color,
                   }}
                 />
@@ -673,7 +683,8 @@ export function StatsView(props: { session: MountedSession }) {
               {(entry) => (
                 <span class="stats-legend-item">
                   <span class="stats-legend-swatch" style={{ background: entry.color }} />
-                  {t(`stats.${entry.key}`)} <b>{formatTokens(entry.value, locale)}</b>
+                  {t(`stats.${entry.key}`)} <b>{formatTokens(entry.value, locale)}</b>{" "}
+                  <span class="stats-legend-share">{formatPercent(entry.share, locale)}</span>
                 </span>
               )}
             </For>
