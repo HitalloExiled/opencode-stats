@@ -5,17 +5,21 @@
  * the window cannot see the base prompt, the AGENTS.md instructions or the
  * blocks that notes/memory/plans push into `system`.
  *
- * Capture is deliberately non-blocking. `session.context` runs inside the
- * model-request path, so the hook only snapshots the `system` array and hands
- * it to the global scheduler; building parts, counting bytes and hashing run
- * on a later tick. Doing that work inline would delay the request and distort
- * the tok/s metrics this plugin measures.
+ * Capture is deliberately non-blocking. The `context` hook covers normal agent
+ * steps and the `compaction` hook covers the summarization request (the server
+ * routes it through a separate hook, so `context` never sees it). Both only
+ * snapshot the `system` array and hand it to the global scheduler; building
+ * parts, counting bytes and hashing run on a later tick. Doing that work inline
+ * would delay the request and distort the tok/s metrics this plugin measures.
  *
  * Metrics and rate history are computed entirely in the GUI bundle.
  */
 
 import { Plugin } from "@opencode/plugin";
-import type { SessionContext } from "@opencode/plugin/promise/session";
+import type {
+  SessionCompaction,
+  SessionContext,
+} from "@opencode/plugin/promise/session";
 
 import { StatsRpc } from "./src/gui/contract.js";
 import { createRpcHandlers } from "./src/rpc.js";
@@ -33,6 +37,31 @@ function errorText(error: unknown): string {
  */
 const runtime = statsRuntime();
 
+/**
+ * Snapshots one model request's system array. Shared by the `context` hook
+ * (normal agent steps) and the `compaction` hook (the summarization request
+ * uses its own hook on the server, so `context` alone never sees it).
+ */
+function capture(event: SessionContext): void {
+  if (!runtime.observability.enabled) return;
+  try {
+    runtime.scheduler.enqueue({
+      sessionID: String(event.sessionID),
+      agent: String(event.agent),
+      model: {
+        providerID: String(event.model.providerID),
+        id: String(event.model.id),
+        ...(event.model.variant ? { variant: String(event.model.variant) } : {}),
+      },
+      // Shallow copy only: the array is cheap, the strings are immutable.
+      system: event.system.slice(),
+    });
+  } catch (error) {
+    // Never break a model request because the prompt viewer failed.
+    console.error(`[stats] could not queue system prompt: ${errorText(error)}`);
+  }
+}
+
 export default Plugin.define({
   id: "stats",
   async setup(ctx: Ctx) {
@@ -44,24 +73,12 @@ export default Plugin.define({
     });
 
     const registrations = await Promise.all([
-      ctx.session.hook("context", (event: SessionContext) => {
-        if (!runtime.observability.enabled) return;
-        try {
-          runtime.scheduler.enqueue({
-            sessionID: String(event.sessionID),
-            agent: String(event.agent),
-            model: {
-              providerID: String(event.model.providerID),
-              id: String(event.model.id),
-              ...(event.model.variant ? { variant: String(event.model.variant) } : {}),
-            },
-            // Shallow copy only: the array is cheap, the strings are immutable.
-            system: event.system.slice(),
-          });
-        } catch (error) {
-          // Never break a model request because the prompt viewer failed.
-          console.error(`[stats] could not queue system prompt: ${errorText(error)}`);
-        }
+      ctx.session.hook("context", capture),
+      ctx.session.hook("compaction", (event: SessionCompaction) => {
+        // A previous hook supplied the summary, so no model request is made
+        // and there is no system prompt to capture.
+        if (event.result) return;
+        capture(event);
       }),
       ctx.rpc.register(StatsRpc, createRpcHandlers(runtime)),
     ]);

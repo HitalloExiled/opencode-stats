@@ -56,9 +56,12 @@ test/                    # bun:test das funções puras
 
 ## Servidor
 
-- `index.ts` registra `ctx.session.hook("context", ...)` e
-  `ctx.rpc.register(StatsRpc, handlers)`; o teardown descarta as duas
-  assinaturas.
+- `index.ts` registra `ctx.session.hook("context", ...)`,
+  `ctx.session.hook("compaction", ...)` e `ctx.rpc.register(StatsRpc, handlers)`;
+  o teardown descarta as assinaturas. A compactação **não** dispara o hook
+  `context`: ela usa o hook `compaction`, então os dois precisam capturar. Se o
+  evento de compactação já trouxer `result` (outro plugin forneceu o resumo),
+  não há request e a captura é ignorada.
 - O hook **não pode bloquear o caminho do request**: ele só lê
   `event.system.slice()`, `event.agent` e `event.model` e chama
   `runtime.scheduler.enqueue(...)`. Nada de classificação, contagem de bytes ou

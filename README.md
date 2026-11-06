@@ -113,8 +113,10 @@ observabilidade desligada.
 
 O plugin tem duas partes:
 
-- **Servidor** (`index.ts`): registra o hook `session.context` e captura o
-  array `system` montado para o request. A segunda parte normalmente carrega
+- **Servidor** (`index.ts`): registra os hooks `session.context` (passos normais)
+  e `session.compaction` (request de sumarização da compactação, que usa um hook
+  próprio) e captura o array `system` montado para o request. A segunda parte
+  normalmente carrega
   `metadata.experimental.instructions`, com uma entrada `{ key, text }` por
   fonte; os plugins `notes`, `memory` e `plans` acrescentam partes extras
   depois. O hook **não** classifica nem faz hash: ele tira um snapshot raso do
