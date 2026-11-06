@@ -111,7 +111,8 @@ const CSS = `
 .stats-metric-key { color: var(--v2-text-text-muted, #9b9b9b); font-size: 10.5px; font-weight: 600; }
 .stats-metric-value { color: var(--v2-text-text-faint, #6e6e6e); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stats-metric-value b { color: var(--v2-text-text-base, #e8e8e8); font-weight: 650; }
-.stats-tool-list { display: flex; flex-direction: column; gap: 1px; max-height: 186px; overflow-y: auto; scrollbar-width: thin; }
+.stats-tool-list { display: flex; flex-direction: column; gap: 1px; height: 186px; max-height: 186px; overflow-y: auto; scrollbar-width: thin; }
+.stats-tool-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--v2-text-text-faint, #6e6e6e); font-size: 10px; }
 .stats-tool-row { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 6px; font-size: 10.5px; color: var(--v2-text-text-muted, #9b9b9b); }
 .stats-tool-row:hover { background: var(--v2-overlay-simple-overlay-hover, #262626); }
 .stats-status { width: 6px; height: 6px; border-radius: 50%; flex: none; }
@@ -802,8 +803,11 @@ export function StatsView(props: { session: MountedSession }) {
             </span>
           </div>
 
-          <Show when={turnTools().calls.length > 0}>
-            <div class="stats-tool-list">
+          <div class="stats-tool-list">
+            <Show
+              when={turnTools().calls.length > 0}
+              fallback={<div class="stats-tool-empty">{t("stats.noToolCalls")}</div>}
+            >
               <For each={turnTools().calls}>
                 {(call) => (
                   <div class="stats-tool-row">
@@ -829,8 +833,8 @@ export function StatsView(props: { session: MountedSession }) {
                   </div>
                 )}
               </For>
-            </div>
-          </Show>
+            </Show>
+          </div>
         </section>
 
         <section class="stats-card">
