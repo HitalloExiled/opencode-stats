@@ -32,7 +32,6 @@ export function Gauge(props: {
   value: number | undefined;
   average: number | undefined;
   max: number;
-  live: boolean;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -108,7 +107,7 @@ export function Gauge(props: {
         )}
         {dot() && <circle class="stats-gauge-dot" cx={dot()!.x} cy={dot()!.y} r={3.2} />}
         <text class="stats-gauge-number" x={CX} y={70} text-anchor="middle">
-          {props.value === undefined ? "—" : `${props.live ? "~" : ""}${formatRate(props.value, locale)}`}
+          {props.value === undefined ? "—" : formatRate(props.value, locale)}
         </text>
         <text class="stats-gauge-unit" x={CX} y={86} text-anchor="middle">
           {t("stats.rate")}

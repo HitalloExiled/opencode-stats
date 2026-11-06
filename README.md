@@ -48,10 +48,9 @@ symlink, instala as dependências e compila o bundle da GUI.
 
 ### Aba Estatísticas
 
-- **Gauge de tok/s**: valor atual com `~` enquanto o turno está em andamento
-  (inclusive entre passos, durante ferramentas) e sem `~` quando a sessão fica
-  ociosa. Durante a transmissão o valor é estimado; ao terminar cada passo, o
-  exato substitui a estimativa. A média da sessão fica marcada no arco.
+- **Gauge de tok/s**: valor atual. Durante a transmissão o valor é estimado;
+  ao terminar cada passo, o exato substitui a estimativa. A média da sessão fica
+  marcada no arco.
 - **Escala adaptativa**: o gauge tem piso de 40 tok/s e degraus redondos (40,
   60, 80, 100, 120, 160, 200...); a escala só cresce durante a sessão, então o
   arco não pula a cada amostra. O eixo Y do gráfico é recalculado para o pico
@@ -98,10 +97,9 @@ ferramenta e as pausas de raciocínio ficam fora da conta.
 
 ### Faixa do cabeçalho
 
-`⚡ ~27.4 tok/s · 🕐 18.6s · 🧠 1.2k · 🔧 7 tools`, com um pulso enquanto o
+`⚡ 27.4 tok/s · 🕐 18.6s · 🧠 1.2k · 🔧 7 tools`, com um pulso enquanto o
 turno está em andamento (inclusive durante ferramentas). O valor exato
-substitui a estimativa quando cada passo termina; o `~` só some quando a sessão
-fica ociosa. Clicar abre a aba
+substitui a estimativa quando cada passo termina. Clicar abre a aba
 Estatísticas. A faixa não aparece em sessões sem passos do assistente nem com a
 observabilidade desligada.
 
@@ -173,8 +171,8 @@ mas não limpa o store; apenas desligar a observabilidade limpa.
   deles entram; um plugin carregado depois do `stats` pode ficar sem rótulo.
 - Sem diff entre capturas e sem persistência das séries entre reinícios.
 - tok/s ao vivo é uma estimativa por caracteres ÷ 4; o valor exato substitui a
-  estimativa ao concluir o passo. O `~` acompanha o turno inteiro (some só ao
-  ficar ocioso) para não piscar a cada passo.
+  estimativa ao concluir o passo. O número não leva marcador de estimativa; o
+  pulso/pill de geração é que indica o turno em andamento.
 - O segmento **ferramentas** da composição de tokens é uma estimativa pelos
   caracteres do conteúdo retornado pelas tools (÷ 4), descontada do input para
   não contar os mesmos tokens duas vezes. O provider não reporta tokens de

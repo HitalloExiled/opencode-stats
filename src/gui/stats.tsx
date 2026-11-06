@@ -162,6 +162,7 @@ const CSS = `
 .stats-model-count { color: var(--v2-text-text-faint, #6e6e6e); font-variant-numeric: tabular-nums; font-size: 10px; margin-left: auto; }
 .stats-context { display: flex; flex-direction: column; gap: 3px; }
 .stats-context-head { display: flex; align-items: baseline; gap: 5px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; }
+.stats-context-title { font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
 .stats-context-head b { color: var(--v2-text-text-base, #e8e8e8); font-weight: 650; font-variant-numeric: tabular-nums; }
 .stats-context-head b.is-warn { color: var(--v2-text-text-warning, #f0b44c); }
 .stats-context-head b.is-danger { color: var(--stats-error); }
@@ -173,14 +174,9 @@ const CSS = `
 .stats-context-used { display: flex; height: 100%; border-radius: 999px; overflow: hidden; transition: width 200ms ease; }
 .stats-context-seg { height: 100%; min-width: 0; }
 .stats-context-subhead { margin-top: 2px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
-.stats-context-parts { display: flex; flex-direction: column; gap: 1px; max-height: 168px; overflow-y: auto; scrollbar-width: thin; }
-.stats-context-part { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto 34px; gap: 6px; align-items: center; padding: 3px 2px; font-size: 10px; }
-.stats-context-dot { width: 6px; height: 6px; border-radius: 2px; background: var(--stats-input); }
-.stats-context-dot.is-added { background: var(--stats-output); }
-.stats-context-dot.is-dynamic { background: var(--stats-reason); }
-.stats-context-part-name { color: var(--v2-text-text-muted, #9b9b9b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stats-context-part-tokens { color: var(--v2-text-text-faint, #6e6e6e); font-variant-numeric: tabular-nums; }
-.stats-context-part-share { color: var(--v2-text-text-faint, #6e6e6e); font-variant-numeric: tabular-nums; text-align: right; }
+.stats-context-subhead b { color: var(--v2-text-text-base, #e8e8e8); font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.stats-prompt-bar { display: flex; height: 6px; border-radius: 999px; background: var(--v2-background-bg-layer-03, #2a2a2a); border: 1px solid var(--v2-border-border-muted, #303030); overflow: hidden; margin: 1px 0 2px; }
+.stats-prompt-seg { height: 100%; min-width: 0; }
 .stats-note { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; display: flex; align-items: center; gap: 6px; padding: 0 2px; }
 .stats-banner { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 8px; padding: 7px 9px; color: var(--v2-text-text-muted, #9b9b9b); font-size: 10.5px; display: flex; align-items: center; gap: 7px; }
 .stats-banner.is-error { color: var(--stats-error); border-color: color-mix(in srgb, var(--stats-error) 30%, transparent); background: color-mix(in srgb, var(--stats-error) 8%, transparent); }
@@ -224,6 +220,18 @@ const INFO = "M8 2.3A5.7 5.7 0 1 0 8 13.7 5.7 5.7 0 0 0 8 2.3Zm0 4.4v3.1M8 5.2v.
 const CHART = "M2 13V9m4 4V5m4 8V2m4 11V7";
 const PLAY = "M4.8 2.7 13 8l-8.2 5.3V2.7Z";
 const STOP = "M4.5 4.5h7v7h-7z";
+
+// Distinct enough at 6px; cycles if the prompt has more parts than colors.
+const SYSTEM_COLORS = [
+  "var(--stats-input)",
+  "var(--stats-output)",
+  "var(--stats-reason)",
+  "var(--stats-tools)",
+  "var(--stats-run)",
+  "var(--stats-ok)",
+  "var(--stats-cache)",
+  "var(--stats-error)",
+];
 
 // The panel content remounts when its tab or the routed turn changes; these
 // two selections are viewing preferences, so they live outside the component
@@ -467,11 +475,8 @@ export function StatsView(props: { session: MountedSession }) {
     return values.reduce((sum, value) => sum + value, 0) / values.length;
   });
 
-  // The tilde means "turn in progress". Tying it to the live estimate made it
-  // blink between estimate and exact at every step boundary (tool execution
-  // happens between steps), which looked like a glitch. While the session runs
-  // the gauge shows `~`; when it goes idle the exact value is shown.
-  const isLiveRate = createMemo(() => running() && currentRate() !== undefined);
+  // The card header's "generating" pill already says the turn is in progress;
+  // the rate itself has no approximation marker.
   const turnSamples = createMemo(() => samplesForTurn(lastTurn(), liveSamples()));
 
   const reasoningTokens = createMemo(() => {
@@ -685,21 +690,30 @@ export function StatsView(props: { session: MountedSession }) {
 
   const systemParts = createMemo(() => {
     const cap = capture();
-    if (!cap) return [];
-    const total = contextSources().total;
-    return cap.parts
+    if (!cap) return { parts: [], total: 0 };
+    const parts = cap.parts
       .map((part) => {
         const tokens = Math.ceil(part.bytes / 4);
         return {
+          order: part.order,
           key: `${part.order}:${part.key}`,
           label: part.labelKey ? t(part.labelKey) : part.label,
-          group: part.group,
           tokens,
-          share: total > 0 ? (tokens / total) * 100 : 0,
         };
       })
       .filter((part) => part.tokens > 0)
-      .sort((a, b) => b.tokens - a.tokens);
+      .sort((a, b) => a.order - b.order);
+    const total = parts.reduce((sum, part) => sum + part.tokens, 0);
+    // The bar is the system prompt's own composition, so its shares are within
+    // the system prompt, not within the whole context window.
+    return {
+      parts: parts.map((part, index) => ({
+        ...part,
+        share: total > 0 ? (part.tokens / total) * 100 : 0,
+        color: SYSTEM_COLORS[index % SYSTEM_COLORS.length]!,
+      })),
+      total,
+    };
   });
 
   const maxToolCalls = createMemo(() =>
@@ -825,7 +839,6 @@ export function StatsView(props: { session: MountedSession }) {
                 value={currentRate()}
                 average={averageRate()}
                 max={gaugeMax()}
-                live={isLiveRate()}
               />
             </div>
             <div class="stats-hero-meta">
@@ -1043,9 +1056,9 @@ export function StatsView(props: { session: MountedSession }) {
               <div class="stats-context-head">
                 <Show
                   when={contextLimit() !== undefined}
-                  fallback={<span>{t("stats.contextComposition")}</span>}
+                  fallback={<span class="stats-context-title">{t("stats.contextComposition")}</span>}
                 >
-                  <span>{t("stats.contextWindow")}</span>
+                  <span class="stats-context-title">{t("stats.contextWindow")}</span>
                   <b>{formatTokens(tokenParts().total, locale)}</b>
                   <span class="stats-context-sep">/</span>
                   <span>{formatTokens(contextLimit() ?? 0, locale)}</span>
@@ -1133,22 +1146,35 @@ export function StatsView(props: { session: MountedSession }) {
                   </div>
                 }
               >
-                <div class="stats-context-subhead">{t("stats.contextSystemParts")}</div>
-                <div class="stats-context-parts">
-                  <For each={systemParts()}>
+                <div class="stats-context-subhead">
+                  {t("stats.contextSystemParts")}{" "}
+                  <b>{formatTokens(systemParts().total, locale)}</b>
+                </div>
+                <div
+                  class="stats-prompt-bar"
+                  role="img"
+                  aria-label={t("stats.contextSystemParts")}
+                >
+                  <For each={systemParts().parts}>
                     {(part) => (
-                      <div class="stats-context-part">
-                        <span class={`stats-context-dot is-${part.group}`} />
-                        <span class="stats-context-part-name" title={part.label}>
-                          {part.label}
-                        </span>
-                        <span class="stats-context-part-tokens">
-                          {formatTokens(part.tokens, locale)}
-                        </span>
-                        <span class="stats-context-part-share">
+                      <span
+                        class="stats-prompt-seg"
+                        title={`${part.label}: ${formatTokens(part.tokens, locale)} · ${formatPercent(part.share, locale)}`}
+                        style={{ width: `${part.share}%`, background: part.color }}
+                      />
+                    )}
+                  </For>
+                </div>
+                <div class="stats-legend">
+                  <For each={systemParts().parts}>
+                    {(part) => (
+                      <span class="stats-legend-item">
+                        <span class="stats-legend-swatch" style={{ background: part.color }} />
+                        {part.label} <b>{formatTokens(part.tokens, locale)}</b>{" "}
+                        <span class="stats-legend-share">
                           {formatPercent(part.share, locale)}
                         </span>
-                      </div>
+                      </span>
                     )}
                   </For>
                 </div>

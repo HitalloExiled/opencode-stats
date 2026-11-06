@@ -6,8 +6,8 @@
  * wall-clock time (which would include tool execution and thinking pauses).
  *
  * While a step streams, `estimateLiveRate` estimates tokens from the text
- * received so far (~4 characters per token) over the elapsed time. The estimate
- * is always shown with a `~` and replaced by the exact value when the step ends.
+ * received so far (~4 characters per token) over the elapsed time. The exact
+ * value replaces the estimate when the step ends.
  */
 
 import type {

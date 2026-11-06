@@ -82,8 +82,8 @@ export function StatsStrip(props: { session: MountedSession; active: boolean }) 
     return metrics.steps[metrics.steps.length - 1]?.rate ?? metrics.rate;
   });
 
-  // The dot and the tilde follow the turn, not the step: a tool execution
-  // between two streaming steps must not flash the live indicator off.
+  // The dot follows the turn, not the step: a tool execution between two
+  // streaming steps must not flash the live indicator off.
   const live = createMemo(() => running() && rate() !== undefined);
   const tools = createMemo(() => turn()?.toolCalls.length ?? 0);
   const reasoning = createMemo(() => {
@@ -118,7 +118,6 @@ export function StatsStrip(props: { session: MountedSession; active: boolean }) 
         </Show>
         <Icon path="M8.8 1.5 3.5 9h3.6l-.9 5.5L11.5 7H8l.8-5.5Z" />
         <span class="stats-strip-rate">
-          {live() ? "~" : ""}
           {formatRate(rate(), locale)} {t("stats.rate")}
         </span>
         <span class="stats-strip-sep">·</span>
