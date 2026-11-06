@@ -6,7 +6,7 @@
  * plain SVG so the GUI bundle carries no chart dependency.
  */
 
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 
 import { formatRate } from "../format";
 import {
@@ -29,7 +29,7 @@ const CSS = `
 .stats-chart-seg button { appearance: none; border: 0; background: transparent; color: var(--v2-text-text-muted, #9b9b9b); font: inherit; font-size: 10px; padding: 3px 8px; border-radius: 5px; cursor: pointer; }
 .stats-chart-seg button:hover { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-hover, #262626); }
 .stats-chart-seg button.is-active { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-pressed, #303030); font-weight: 650; }
-.stats-chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.stats-chart-svg { width: 100%; height: 108px; display: block; overflow: visible; }
 .stats-chart-grid { stroke: var(--v2-border-border-muted, #2c2c2c); stroke-width: 1; stroke-dasharray: 2 4; }
 .stats-chart-axis { fill: var(--v2-text-text-faint, #6e6e6e); font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-size: 8px; }
 .stats-chart-area { fill: var(--v2-icon-icon-accent, #4dc8b8); fill-opacity: 0.12; }
@@ -48,8 +48,8 @@ const LEFT = 28;
 const RIGHT = 8;
 const TOP = 8;
 const BOTTOM = 18;
-const PW = W - LEFT - RIGHT;
 const PH = H - TOP - BOTTOM;
+const MIN_WIDTH = LEFT + RIGHT + 24;
 
 export function RateChart(props: {
   turnSamples: readonly RateSample[];
@@ -63,6 +63,22 @@ export function RateChart(props: {
 }) {
   const t = useT();
   const locale = useLocale();
+
+  // Measure the card and redraw at that width. A fixed viewBox with
+  // `width: 100%` scaled the whole drawing (text, strokes and dots) when the
+  // panel resized, which looked like zooming instead of adapting.
+  const [width, setWidth] = createSignal(W);
+  const pw = createMemo(() => Math.max(1, width() - LEFT - RIGHT));
+  let host: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect.width;
+      if (next && next > 0) setWidth(Math.max(MIN_WIDTH, Math.round(next)));
+    });
+    observer.observe(host);
+    onCleanup(() => observer.disconnect());
+  });
 
   const samples = createMemo(() =>
     props.range === "session" ? [...props.sessionSamples] : [...props.turnSamples],
@@ -85,8 +101,8 @@ export function RateChart(props: {
     normalizeSeries(samples(), domain().t0, domain().t1, Math.max(1, props.scaleMax)),
   );
 
-  const line = createMemo(() => linePath(points(), PW, PH));
-  const area = createMemo(() => areaPath(points(), PW, PH));
+  const line = createMemo(() => linePath(points(), pw(), PH));
+  const area = createMemo(() => areaPath(points(), pw(), PH));
   const stepPoints = createMemo(() => {
     const indices = new Set(stepPointIndices(points()));
     return points().filter((_, index) => indices.has(index));
@@ -113,7 +129,7 @@ export function RateChart(props: {
   return (
     <>
       <style>{CSS}</style>
-      <div class="stats-chart">
+      <div class="stats-chart" ref={host}>
         <div class="stats-chart-head">
           <span class="stats-chart-title">{t("stats.history")}</span>
           <span class="stats-chart-spacer" />
@@ -137,7 +153,7 @@ export function RateChart(props: {
 
         <svg
           class="stats-chart-svg"
-          viewBox={`0 0 ${W} ${H}`}
+          viewBox={`0 0 ${width()} ${H}`}
           role="img"
           aria-label={`${t("stats.history")}: ${caption()}`}
           preserveAspectRatio="none"
@@ -145,7 +161,7 @@ export function RateChart(props: {
           <For each={grid}>
             {(row) => (
               <>
-                <line class="stats-chart-grid" x1={LEFT} x2={W - RIGHT} y1={row.y} y2={row.y} />
+                <line class="stats-chart-grid" x1={LEFT} x2={width() - RIGHT} y1={row.y} y2={row.y} />
                 <text class="stats-chart-axis" x={LEFT - 4} y={row.y + 3} text-anchor="end">
                   {row.label}
                 </text>
@@ -157,7 +173,7 @@ export function RateChart(props: {
             <line
               class="stats-chart-average"
               x1={LEFT}
-              x2={W - RIGHT}
+              x2={width() - RIGHT}
               y1={averageY()!}
               y2={averageY()!}
             />
@@ -169,13 +185,13 @@ export function RateChart(props: {
               <path class="stats-chart-line" d={line()} />
               <For each={stepPoints()}>
                 {(point) => (
-                  <circle class="stats-chart-step" cx={point.x * PW} cy={(1 - point.y) * PH} r={2.1} />
+                  <circle class="stats-chart-step" cx={point.x * pw()} cy={(1 - point.y) * PH} r={2.1} />
                 )}
               </For>
               <Show when={props.live && lastPoint()}>
                 <circle
                   class="stats-chart-live"
-                  cx={lastPoint()!.x * PW}
+                  cx={lastPoint()!.x * pw()}
                   cy={(1 - lastPoint()!.y) * PH}
                   r={2.6}
                 />
@@ -184,7 +200,7 @@ export function RateChart(props: {
           </g>
 
           <Show when={points().length === 0}>
-            <text class="stats-chart-empty" x={W / 2} y={TOP + PH / 2} text-anchor="middle">
+            <text class="stats-chart-empty" x={width() / 2} y={TOP + PH / 2} text-anchor="middle">
               {t("stats.noSamples")}
             </text>
           </Show>
@@ -192,14 +208,14 @@ export function RateChart(props: {
           <text class="stats-chart-axis" x={LEFT} y={H - 4} text-anchor="start">
             {props.range === "session" ? t("stats.start") : t("stats.last60")}
           </text>
-          <text class="stats-chart-axis" x={W - RIGHT} y={H - 4} text-anchor="end">
+          <text class="stats-chart-axis" x={width() - RIGHT} y={H - 4} text-anchor="end">
             {t("stats.now")}
           </text>
 
           <Show when={averageY() !== undefined}>
             <text
               class="stats-chart-average-label"
-              x={W - RIGHT}
+              x={width() - RIGHT}
               y={Math.max(TOP + 8, averageY()! - 3)}
               text-anchor="end"
             >
