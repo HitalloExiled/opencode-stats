@@ -174,7 +174,9 @@ mas não limpa o store; apenas desligar a observabilidade limpa.
   resultados de tools e o restante (conversa + definições de tools). Quando o
   modelo é conhecido, a barra mostra o uso (prompt ÷ `limit.context`) e só a
   parte preenchida é dividida nesses segmentos; sem o limite, ela mostra apenas
-  a composição. O system prompt é detalhado por parte logo abaixo.
+  a composição. O system prompt é detalhado por parte logo abaixo. A barra de
+  tipos de token (input/tools/output/reasoning/cache) aparece só na visão
+  **Processados**.
 - A leitura do interruptor no `ctx.storage` é assíncrona. Um request que chegue
   antes da hidratação pode ser capturado mesmo com o estado persistido em
   `false`; ao ler `false`, o plugin limpa as capturas e a fila.

@@ -900,31 +900,33 @@ export function StatsView(props: { session: MountedSession }) {
               </button>
             </div>
           </div>
-          <div class="stats-token-bar" role="img" aria-label={t("stats.tokenComposition")}>
-            <For each={tokenParts().entries}>
-              {(entry) => (
-                <span
-                  class="stats-token-seg"
-                  title={`${t(`stats.${entry.key}`)}: ${formatTokens(entry.value, locale)} · ${formatPercent(entry.share, locale)}`}
-                  style={{
-                    width: `${entry.share}%`,
-                    background: entry.color,
-                  }}
-                />
-              )}
-            </For>
-          </div>
-          <div class="stats-legend">
-            <For each={tokenParts().entries}>
-              {(entry) => (
-                <span class="stats-legend-item">
-                  <span class="stats-legend-swatch" style={{ background: entry.color }} />
-                  {t(`stats.${entry.key}`)} <b>{formatTokens(entry.value, locale)}</b>{" "}
-                  <span class="stats-legend-share">{formatPercent(entry.share, locale)}</span>
-                </span>
-              )}
-            </For>
-          </div>
+          <Show when={tokenView() === "processed"}>
+            <div class="stats-token-bar" role="img" aria-label={t("stats.tokenComposition")}>
+              <For each={tokenParts().entries}>
+                {(entry) => (
+                  <span
+                    class="stats-token-seg"
+                    title={`${t(`stats.${entry.key}`)}: ${formatTokens(entry.value, locale)} · ${formatPercent(entry.share, locale)}`}
+                    style={{
+                      width: `${entry.share}%`,
+                      background: entry.color,
+                    }}
+                  />
+                )}
+              </For>
+            </div>
+            <div class="stats-legend">
+              <For each={tokenParts().entries}>
+                {(entry) => (
+                  <span class="stats-legend-item">
+                    <span class="stats-legend-swatch" style={{ background: entry.color }} />
+                    {t(`stats.${entry.key}`)} <b>{formatTokens(entry.value, locale)}</b>{" "}
+                    <span class="stats-legend-share">{formatPercent(entry.share, locale)}</span>
+                  </span>
+                )}
+              </For>
+            </div>
+          </Show>
 
           <div class="stats-note">
             <Icon path={INFO} size={10} />
