@@ -463,10 +463,16 @@ export function StatsView(props: { session: MountedSession }) {
   const isLiveRate = createMemo(() => running() && currentRate() !== undefined);
   const turnSamples = createMemo(() => samplesForTurn(lastTurn(), liveSamples()));
 
+  const reasoningTokens = createMemo(() => {
+    const metrics = turnMetrics();
+    if (!metrics) return 0;
+    return metrics.reasoningTokens > 0 ? metrics.reasoningTokens : metrics.reasoningTextTokens;
+  });
+
   const reasoningShare = createMemo(() => {
     const metrics = turnMetrics();
     if (!metrics || metrics.outputTokens <= 0) return undefined;
-    return (metrics.reasoningTokens / metrics.outputTokens) * 100;
+    return (reasoningTokens() / metrics.outputTokens) * 100;
   });
 
   const turnTools = createMemo(() => {
@@ -846,7 +852,7 @@ export function StatsView(props: { session: MountedSession }) {
             <span class="stats-metric-text">
               <span class="stats-metric-key">{t("stats.reasoning")}</span>
               <span class="stats-metric-value">
-                <b>{formatTokens(turnMetrics()?.reasoningTokens ?? 0, locale)}</b> {t("stats.tokens")} ·{" "}
+                <b>{formatTokens(reasoningTokens(), locale)}</b> {t("stats.tokens")} ·{" "}
                 <b>{formatDuration(turnMetrics()?.reasoningMs)}</b> ·{" "}
                 <b>{formatPercent(reasoningShare(), locale)}</b> {t("stats.shareOfOutput")}
               </span>

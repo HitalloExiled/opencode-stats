@@ -62,6 +62,8 @@ export type TurnMetrics = {
   liveRate?: number | undefined;
   outputTokens: number;
   reasoningTokens: number;
+  /** Estimated tokens of the reasoning text (characters ÷ 4). */
+  reasoningTextTokens: number;
   reasoningMs: number;
   firstTokenMs?: number | undefined;
   toolCalls: ToolCall[];
@@ -381,6 +383,7 @@ export function analyzeTurn(turn: Turn, now: number, running: boolean): TurnMetr
     ...(liveRate !== undefined ? { liveRate } : {}),
     outputTokens: steps.reduce((sum, step) => sum + step.outputTokens, 0),
     reasoningTokens: steps.reduce((sum, step) => sum + step.reasoningTokens, 0),
+    reasoningTextTokens: steps.reduce((sum, step) => sum + step.reasoningTextTokens, 0),
     reasoningMs: steps.reduce((sum, step) => sum + step.reasoningMs, 0),
     ...(first?.firstTokenMs !== undefined ? { firstTokenMs: first.firstTokenMs } : {}),
     toolCalls: steps.flatMap((step) => step.toolCalls),

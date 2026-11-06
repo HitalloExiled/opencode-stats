@@ -86,7 +86,11 @@ export function StatsStrip(props: { session: MountedSession; active: boolean }) 
   // between two streaming steps must not flash the live indicator off.
   const live = createMemo(() => running() && rate() !== undefined);
   const tools = createMemo(() => turn()?.toolCalls.length ?? 0);
-  const reasoning = createMemo(() => turn()?.reasoningTokens ?? 0);
+  const reasoning = createMemo(() => {
+    const metrics = turn();
+    if (!metrics) return 0;
+    return metrics.reasoningTokens > 0 ? metrics.reasoningTokens : metrics.reasoningTextTokens;
+  });
   const duration = createMemo(() => turn()?.durationMs);
 
   const open = () => {
