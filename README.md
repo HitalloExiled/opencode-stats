@@ -64,8 +64,10 @@ symlink, instala as dependências e compila o bundle da GUI.
   médio/máximo, composição de tokens em duas visões — **Processados** (todos os
   passos desde a última compactação: input, ferramentas estimadas, output,
   reasoning e cache) e **Contexto** (prompt do último request concluído: input,
-  ferramentas estimadas e cache) —, custo, taxa de sucesso e ranking de
-  ferramentas, além de passos/tokens por modelo.
+  ferramentas estimadas e cache; uso da janela e composição do conteúdo por
+  sistema, resultados de tools e conversa/definições, com detalhamento do system
+  prompt) —, custo, taxa de sucesso e ranking de ferramentas, além de
+  passos/tokens por modelo.
 
 O tok/s usa a mesma fórmula do rodapé do TUI: `(output + reasoning) /
 (streamed - created)` por passo, agregado antes de dividir. O tempo de
@@ -167,7 +169,9 @@ mas não limpa o store; apenas desligar a observabilidade limpa.
   ferramenta separadamente. Na visão **Contexto**, o total é o prompt do último
   request concluído (`input + cache`), sem output/reasoning. Quando o modelo é
   conhecido, a visão mostra também o uso da janela (prompt ÷ `limit.context`),
-  com barra de percentual.
+  com barra de percentual. A composição do conteúdo separa o system prompt
+  (estimado pelos bytes da captura ÷ 4), os resultados de tools e o restante
+  (conversa + definições de tools), com o system prompt detalhado por parte.
 - A leitura do interruptor no `ctx.storage` é assíncrona. Um request que chegue
   antes da hidratação pode ser capturado mesmo com o estado persistido em
   `false`; ao ler `false`, o plugin limpa as capturas e a fila.

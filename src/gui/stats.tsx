@@ -42,6 +42,7 @@ import {
 import { RateChart, type ChartRange } from "./chart";
 import { Gauge } from "./gauge";
 import { useLocale, useT } from "./i18n";
+import { StatsRpc, type PromptCapture } from "./contract";
 import { useObservability } from "./observability";
 
 const CSS = `
@@ -163,6 +164,16 @@ const CSS = `
 .stats-context-fill { display: block; height: 100%; border-radius: 999px; background: var(--stats-output); transition: width 200ms ease; }
 .stats-context-fill.is-warn { background: var(--v2-text-text-warning, #f0b44c); }
 .stats-context-fill.is-danger { background: var(--stats-error); }
+.stats-context-sources { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--v2-border-border-muted, #2c2c2c); padding-top: 8px; }
+.stats-context-subhead { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+.stats-context-parts { display: flex; flex-direction: column; gap: 1px; max-height: 168px; overflow-y: auto; scrollbar-width: thin; }
+.stats-context-part { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto 34px; gap: 6px; align-items: center; padding: 3px 2px; font-size: 10px; }
+.stats-context-dot { width: 6px; height: 6px; border-radius: 2px; background: var(--stats-input); }
+.stats-context-dot.is-added { background: var(--stats-output); }
+.stats-context-dot.is-dynamic { background: var(--stats-reason); }
+.stats-context-part-name { color: var(--v2-text-text-muted, #9b9b9b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-context-part-tokens { color: var(--v2-text-text-faint, #6e6e6e); font-variant-numeric: tabular-nums; }
+.stats-context-part-share { color: var(--v2-text-text-faint, #6e6e6e); font-variant-numeric: tabular-nums; text-align: right; }
 .stats-note { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; display: flex; align-items: center; gap: 6px; padding: 0 2px; }
 .stats-banner { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 8px; padding: 7px 9px; color: var(--v2-text-text-muted, #9b9b9b); font-size: 10.5px; display: flex; align-items: center; gap: 7px; }
 .stats-banner.is-error { color: var(--stats-error); border-color: color-mix(in srgb, var(--stats-error) 30%, transparent); background: color-mix(in srgb, var(--stats-error) 8%, transparent); }
@@ -228,6 +239,7 @@ export function StatsView(props: { session: MountedSession }) {
   const [range, setRange] = createSignal<ChartRange>("turn");
   const [scaleMax, setScaleMax] = createSignal(40);
   const [tokenView, setTokenView] = createSignal<"processed" | "context">("processed");
+  const [capture, setCapture] = createSignal<PromptCapture | null>(null);
 
   const messages = createMemo(() => mergeMessages(full(), loaded()));
   const turns = createMemo(() => findTurns(messages()));
@@ -328,15 +340,43 @@ export function StatsView(props: { session: MountedSession }) {
     }
   }
 
+  let captureController: AbortController | undefined;
+  async function loadCapture() {
+    if (!session.id || !enabled()) return;
+    captureController?.abort();
+    captureController = new AbortController();
+    const signal = captureController.signal;
+    try {
+      const result = await session.server.client
+        .rpc(StatsRpc)
+        .systemPrompt(
+          { sessionID: session.id, ifNoneMatch: capture()?.hash },
+          { location: { directory: session.directory }, signal },
+        );
+      if (signal.aborted) return;
+      if (result.status === "capture") setCapture(result.capture);
+      else if (result.status === "missing") setCapture(null);
+      // `unchanged` keeps the capture already shown.
+    } catch {
+      // The source breakdown degrades to the provider total.
+    }
+  }
+
   onMount(() => {
-    if (enabled()) void refreshFull();
+    if (enabled()) {
+      void refreshFull();
+      void loadCapture();
+    }
   });
   createEffect(
     on(
       status,
       (next, previous) => {
         if (!enabled()) return;
-        if (previous === "running" && next === "idle") void refreshFull(true);
+        if (previous === "running" && next === "idle") {
+          void refreshFull(true);
+          void loadCapture();
+        }
       },
       { defer: true },
     ),
@@ -358,12 +398,27 @@ export function StatsView(props: { session: MountedSession }) {
         return undefined;
       },
       (id, previous) => {
-        if (id && id !== previous) void refreshFull(true);
+        if (id && id !== previous) {
+          void refreshFull(true);
+          void loadCapture();
+        }
       },
       { defer: true },
     ),
   );
-  onCleanup(() => controller?.abort());
+  createEffect(
+    on(
+      tokenView,
+      (view) => {
+        if (view === "context" && !capture()) void loadCapture();
+      },
+      { defer: true },
+    ),
+  );
+  onCleanup(() => {
+    controller?.abort();
+    captureController?.abort();
+  });
 
   const toggle = async (next: boolean) => {
     const result = await observability.setEnabled(next);
@@ -489,6 +544,65 @@ export function StatsView(props: { session: MountedSession }) {
     const total = tokenParts().total;
     if (limit === undefined || total <= 0) return undefined;
     return (total / limit) * 100;
+  });
+
+  const contextSources = createMemo(() => {
+    const request = sessionMetrics().lastRequest;
+    if (!request) return { entries: [], total: 0 };
+    const tokens = request.tokens;
+    const total = tokens.input + tokens.cache.read + tokens.cache.write;
+    // The system prompt comes from the capture (bytes ÷ 4) and tool results
+    // from the tool content estimate. Everything left is conversation plus the
+    // tool definitions, which the provider counts but does not break out.
+    const system = Math.min(total, Math.ceil((capture()?.totalBytes ?? 0) / 4));
+    const tools = Math.min(Math.max(0, total - system), request.toolTokens);
+    const conversation = Math.max(0, total - system - tools);
+    const entries = [
+      {
+        key: "system",
+        labelKey: "stats.contextSystem",
+        value: system,
+        color: "var(--stats-input)",
+        share: 0,
+      },
+      {
+        key: "tools",
+        labelKey: "stats.contextTools",
+        value: tools,
+        color: "var(--stats-tools)",
+        share: 0,
+      },
+      {
+        key: "conversation",
+        labelKey: "stats.contextConversation",
+        value: conversation,
+        color: "var(--stats-output)",
+        share: 0,
+      },
+    ];
+    for (const entry of entries) {
+      entry.share = total > 0 ? (entry.value / total) * 100 : 0;
+    }
+    return { entries, total };
+  });
+
+  const systemParts = createMemo(() => {
+    const cap = capture();
+    if (!cap) return [];
+    const total = contextSources().total;
+    return cap.parts
+      .map((part) => {
+        const tokens = Math.ceil(part.bytes / 4);
+        return {
+          key: `${part.order}:${part.key}`,
+          label: part.labelKey ? t(part.labelKey) : part.label,
+          group: part.group,
+          tokens,
+          share: total > 0 ? (tokens / total) * 100 : 0,
+        };
+      })
+      .filter((part) => part.tokens > 0)
+      .sort((a, b) => b.tokens - a.tokens);
   });
 
   const maxToolCalls = createMemo(() =>
@@ -845,6 +959,64 @@ export function StatsView(props: { session: MountedSession }) {
                   style={{ width: `${Math.min(100, contextUsage() ?? 0)}%` }}
                 />
               </div>
+            </div>
+          </Show>
+
+          <Show when={tokenView() === "context" && tokenParts().hasRequest}>
+            <div class="stats-context-sources">
+              <div class="stats-context-subhead">{t("stats.contextComposition")}</div>
+              <div class="stats-token-bar" role="img" aria-label={t("stats.contextComposition")}>
+                <For each={contextSources().entries}>
+                  {(entry) => (
+                    <span
+                      class="stats-token-seg"
+                      title={`${t(entry.labelKey)}: ${formatTokens(entry.value, locale)} · ${formatPercent(entry.share, locale)}`}
+                      style={{ width: `${entry.share}%`, background: entry.color }}
+                    />
+                  )}
+                </For>
+              </div>
+              <div class="stats-legend">
+                <For each={contextSources().entries}>
+                  {(entry) => (
+                    <span class="stats-legend-item">
+                      <span class="stats-legend-swatch" style={{ background: entry.color }} />
+                      {t(entry.labelKey)} <b>{formatTokens(entry.value, locale)}</b>{" "}
+                      <span class="stats-legend-share">{formatPercent(entry.share, locale)}</span>
+                    </span>
+                  )}
+                </For>
+              </div>
+
+              <Show
+                when={capture()}
+                fallback={
+                  <div class="stats-note">
+                    <Icon path={INFO} size={10} />
+                    <span>{t("stats.contextNoSystem")}</span>
+                  </div>
+                }
+              >
+                <div class="stats-context-subhead">{t("stats.contextSystemParts")}</div>
+                <div class="stats-context-parts">
+                  <For each={systemParts()}>
+                    {(part) => (
+                      <div class="stats-context-part">
+                        <span class={`stats-context-dot is-${part.group}`} />
+                        <span class="stats-context-part-name" title={part.label}>
+                          {part.label}
+                        </span>
+                        <span class="stats-context-part-tokens">
+                          {formatTokens(part.tokens, locale)}
+                        </span>
+                        <span class="stats-context-part-share">
+                          {formatPercent(part.share, locale)}
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
             </div>
           </Show>
 
