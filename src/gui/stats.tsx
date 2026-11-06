@@ -42,6 +42,7 @@ import {
 import { RateChart, type ChartRange } from "./chart";
 import { Gauge } from "./gauge";
 import { useLocale, useT } from "./i18n";
+import { useObservability } from "./observability";
 
 const CSS = `
 .stats {
@@ -73,6 +74,7 @@ const CSS = `
 .stats-icon-btn { appearance: none; border: 1px solid transparent; background: transparent; color: var(--v2-text-text-faint, #6e6e6e); width: 25px; height: 25px; border-radius: 6px; display: grid; place-items: center; cursor: pointer; }
 .stats-icon-btn:hover { background: var(--v2-overlay-simple-overlay-hover, #262626); color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-muted, #2c2c2c); }
 .stats-icon-btn:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
+.stats-icon-btn.is-on { color: var(--stats-output); }
 .stats-card { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 10px; padding: 11px; display: flex; flex-direction: column; gap: 9px; }
 .stats-card-head { display: flex; align-items: center; gap: 7px; min-height: 18px; }
 .stats-card-head h3 { margin: 0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--v2-text-text-faint, #6e6e6e); }
@@ -146,6 +148,10 @@ const CSS = `
 .stats-empty svg { opacity: 0.5; }
 .stats-empty-title { font-weight: 600; font-size: 12.5px; }
 .stats-empty-hint { color: var(--v2-text-text-faint, #6e6e6e); font-size: 11px; max-width: 260px; }
+.stats-action { appearance: none; margin-top: 5px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); color: var(--v2-text-text-base, #e8e8e8); border-radius: 7px; padding: 5px 11px; font: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.stats-action:hover { border-color: var(--v2-border-border-strong, #3a3a3a); background: var(--v2-overlay-simple-overlay-hover, #262626); }
+.stats-action:disabled { opacity: 0.55; cursor: default; }
+.stats-action:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
 `;
 
 const Icon = (props: { path: string; size?: number }) => (
@@ -173,12 +179,18 @@ const TOOL =
   "M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1l-4 4a1.4 1.4 0 0 0 2 2l4-4a3.2 3.2 0 0 0 4.1-3.9l-1.8 1.8-1.9-.2-.2-1.9 1.7-1.9Z";
 const INFO = "M8 2.3A5.7 5.7 0 1 0 8 13.7 5.7 5.7 0 0 0 8 2.3Zm0 4.4v3.1M8 5.2v.1";
 const CHART = "M2 13V9m4 4V5m4 8V2m4 11V7";
+const EYE =
+  "M1.6 8s2.3-4.1 6.4-4.1S14.4 8 14.4 8s-2.3 4.1-6.4 4.1S1.6 8 1.6 8Zm6.4 1.7A1.7 1.7 0 1 0 8 6.3";
+const EYE_OFF =
+  "M2.2 2.2l11.6 11.6M6.2 6.2A1.8 1.8 0 0 0 8 9.8c.5 0 .9-.2 1.2-.5M4.1 4.6C2.4 5.7 1.6 8 1.6 8s2.3 4.1 6.4 4.1c1 0 1.8-.2 2.5-.5M12 10.3c1.4-1 2.4-2.3 2.4-2.3S12.1 3.9 8 3.9c-.4 0-.7 0-1.1.1";
 
 export function StatsView(props: { session: MountedSession }) {
   const t = useT();
   const locale = useLocale();
   const session = props.session;
   const data = session.server.data;
+  const observability = useObservability(session);
+  const enabled = observability.enabled;
 
   const loaded = createMemo(() =>
     session.id ? data.session.message.list(session.id) : ([] as SessionMessageInfo[]),
@@ -223,7 +235,7 @@ export function StatsView(props: { session: MountedSession }) {
   );
 
   createEffect(() => {
-    if (!running()) return;
+    if (!enabled() || observability.hidden() || !running()) return;
     const timer = setInterval(() => {
       const time = Date.now();
       setNow(time);
@@ -240,6 +252,7 @@ export function StatsView(props: { session: MountedSession }) {
 
   // Append the exact point as soon as a step completes.
   createEffect(() => {
+    if (!enabled()) return;
     const turn = lastTurn();
     const last = turn?.assistants[turn.assistants.length - 1];
     if (!last || last.time.completed === undefined) return;
@@ -291,17 +304,29 @@ export function StatsView(props: { session: MountedSession }) {
     }
   }
 
-  onMount(() => void refreshFull());
+  onMount(() => {
+    if (enabled()) void refreshFull();
+  });
   createEffect(
     on(
       status,
       (next, previous) => {
+        if (!enabled()) return;
         if (previous === "running" && next === "idle") void refreshFull(true);
       },
       { defer: true },
     ),
   );
   onCleanup(() => controller?.abort());
+
+  const toggle = async (next: boolean) => {
+    const result = await observability.setEnabled(next);
+    if (!result) return;
+    buffer = createRingBuffer(300);
+    finalizedStep = undefined;
+    setLiveSamples([]);
+    if (next) void refreshFull();
+  };
 
   const currentRate = createMemo(() => {
     const metrics = turnMetrics();
@@ -389,15 +414,46 @@ export function StatsView(props: { session: MountedSession }) {
         </span>
         <button
           class="stats-icon-btn"
+          classList={{ "is-on": enabled() }}
           type="button"
-          title={t("stats.refresh")}
-          aria-label={t("stats.refresh")}
-          onClick={() => void refreshFull()}
+          title={enabled() ? t("observability.disable") : t("observability.enable")}
+          aria-label={enabled() ? t("observability.disable") : t("observability.enable")}
+          aria-pressed={enabled()}
+          disabled={observability.busy()}
+          onClick={() => void toggle(!enabled())}
         >
-          <Icon path={REFRESH} size={14} />
+          <Icon path={enabled() ? EYE : EYE_OFF} size={14} />
         </button>
+        <Show when={enabled()}>
+          <button
+            class="stats-icon-btn"
+            type="button"
+            title={t("stats.refresh")}
+            aria-label={t("stats.refresh")}
+            onClick={() => void refreshFull()}
+          >
+            <Icon path={REFRESH} size={14} />
+          </button>
+        </Show>
       </div>
 
+      <Show when={!enabled()}>
+        <div class="stats-empty">
+          <Icon path={EYE_OFF} size={22} />
+          <span class="stats-empty-title">{t("stats.disabled")}</span>
+          <span class="stats-empty-hint">{t("stats.disabledHint")}</span>
+          <button
+            class="stats-action"
+            type="button"
+            disabled={observability.busy()}
+            onClick={() => void toggle(true)}
+          >
+            {t("observability.enable")}
+          </button>
+        </div>
+      </Show>
+
+      <Show when={enabled()}>
       <Show when={error()}>
         <div class="stats-banner is-error">
           <Icon path={INFO} size={12} />
@@ -687,6 +743,7 @@ export function StatsView(props: { session: MountedSession }) {
           <Icon path={INFO} size={11} />
           <span>{t("stats.note")}</span>
         </div>
+      </Show>
       </Show>
     </div>
   );

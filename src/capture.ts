@@ -26,6 +26,8 @@ export type CaptureStore = {
   capture(input: CaptureInput): PromptCapture;
   /** Latest capture for a session, touching its LRU position. */
   get(sessionID: string): PromptCapture | null;
+  /** Latest capture without touching the LRU; used by status reads. */
+  peek(sessionID: string): PromptCapture | null;
   /** Drops every capture. */
   clear(): void;
   readonly size: number;
@@ -114,6 +116,9 @@ export function createCaptureStore(options: CaptureStoreOptions = {}): CaptureSt
       if (!capture) return null;
       touch(String(sessionID));
       return capture;
+    },
+    peek(sessionID) {
+      return sessions.get(String(sessionID)) ?? null;
     },
     clear() {
       sessions.clear();

@@ -23,6 +23,7 @@ import type { MountedSession } from "@opencode/plugin/gui";
 import { formatBytes, formatClock } from "../format";
 import { StatsRpc, type PromptCapture, type PromptGroup, type PromptPart } from "./contract";
 import { useLocale, useT } from "./i18n";
+import { useObservability } from "./observability";
 
 const CSS = `
 .prompt { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; overflow-y: auto; padding: 12px; color: var(--v2-text-text-base, #e8e8e8); font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-size: 12.5px; scrollbar-width: thin; scrollbar-color: var(--v2-border-border-strong, #3a3a3a) transparent; }
@@ -87,6 +88,7 @@ const CSS = `
 .prompt-empty svg { opacity: 0.5; }
 .prompt-empty-title { font-weight: 600; font-size: 12.5px; }
 .prompt-empty-hint { color: var(--v2-text-text-faint, #6e6e6e); font-size: 11px; max-width: 270px; }
+.prompt-empty .prompt-action { margin-top: 4px; }
 .prompt-privacy { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; display: flex; align-items: center; gap: 6px; padding: 0 2px; }
 `;
 
@@ -120,6 +122,8 @@ export function PromptView(props: { session: MountedSession }) {
   const locale = useLocale();
   const session = props.session;
   const data = session.server.data;
+  const observability = useObservability(session);
+  const enabled = observability.enabled;
 
   const [capture, setCapture] = createSignal<PromptCapture | null>(null);
   const [loading, setLoading] = createSignal(false);
@@ -134,7 +138,7 @@ export function PromptView(props: { session: MountedSession }) {
   let controller: AbortController | undefined;
 
   async function load(silent = false) {
-    if (!session.id) return;
+    if (!session.id || !enabled()) return;
     controller?.abort();
     controller = new AbortController();
     const signal = controller.signal;
@@ -142,11 +146,14 @@ export function PromptView(props: { session: MountedSession }) {
     try {
       const rpc = session.server.client.rpc(StatsRpc);
       const result = await rpc.systemPrompt(
-        { sessionID: session.id },
+        { sessionID: session.id, ifNoneMatch: capture()?.hash },
         { location: { directory: session.directory }, signal },
       );
       if (signal.aborted) return;
-      setCapture(result);
+      // `unchanged` keeps the parts already on screen; the refresh only needs
+      // the new metadata, which it does not render separately.
+      if (result.status === "capture") setCapture(result.capture);
+      else if (result.status === "missing") setCapture(null);
       setError(null);
     } catch (cause) {
       if (!signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
@@ -155,17 +162,36 @@ export function PromptView(props: { session: MountedSession }) {
     }
   }
 
-  onMount(() => void load());
+  onMount(() => {
+    if (enabled()) void load();
+  });
   createEffect(
     on(
       () => (session.id ? data.session.status(session.id) : "idle"),
       (next, previous) => {
+        if (!enabled()) return;
         if (previous === "running" && next === "idle") void load(true);
       },
       { defer: true },
     ),
   );
   onCleanup(() => controller?.abort());
+
+  // Re-enabling from another view must refresh this tab, not leave stale parts.
+  createEffect(
+    on(
+      enabled,
+      (next, previous) => {
+        if (next && previous === false) void load(true);
+      },
+      { defer: true },
+    ),
+  );
+
+  const enable = async () => {
+    const result = await observability.setEnabled(true);
+    if (result) void load();
+  };
 
   const labelFor = (part: PromptPart) => (part.labelKey ? t(part.labelKey) : part.label);
   const keyOf = (part: PromptPart) => `${part.order}:${part.key}`;
@@ -271,17 +297,36 @@ export function PromptView(props: { session: MountedSession }) {
           <Icon path={INFO} size={11} />
           {t("prompt.scope")}
         </span>
-        <button
-          class="prompt-icon-btn"
-          type="button"
-          title={t("prompt.refresh")}
-          aria-label={t("prompt.refresh")}
-          onClick={() => void load()}
-        >
-          <Icon path={REFRESH} size={14} />
-        </button>
+        <Show when={enabled()}>
+          <button
+            class="prompt-icon-btn"
+            type="button"
+            title={t("prompt.refresh")}
+            aria-label={t("prompt.refresh")}
+            onClick={() => void load()}
+          >
+            <Icon path={REFRESH} size={14} />
+          </button>
+        </Show>
       </div>
 
+      <Show when={!enabled()}>
+        <div class="prompt-empty">
+          <Icon path={INFO} size={22} />
+          <span class="prompt-empty-title">{t("prompt.disabled")}</span>
+          <span class="prompt-empty-hint">{t("prompt.disabledHint")}</span>
+          <button
+            class="prompt-action"
+            type="button"
+            disabled={observability.busy()}
+            onClick={() => void enable()}
+          >
+            {t("observability.enable")}
+          </button>
+        </div>
+      </Show>
+
+      <Show when={enabled()}>
       <Show when={error()}>
         <div class="prompt-banner is-error">
           <Icon path={INFO} size={12} />
@@ -476,6 +521,7 @@ export function PromptView(props: { session: MountedSession }) {
         <Icon path={INFO} size={10} />
         <span>{t("prompt.privacy")}</span>
       </div>
+      </Show>
     </div>
   );
 }

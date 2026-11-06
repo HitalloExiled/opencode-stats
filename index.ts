@@ -3,8 +3,13 @@
  *
  * The server is only responsible for capturing the composed system prompt:
  * the window cannot see the base prompt, the AGENTS.md instructions or the
- * blocks that notes/memory/plans push into `system`. The hook stores the last
- * capture per session in memory and the RPC serves it to the panel.
+ * blocks that notes/memory/plans push into `system`.
+ *
+ * Capture is deliberately non-blocking. `session.context` runs inside the
+ * model-request path, so the hook only snapshots the `system` array and hands
+ * it to the global scheduler; building parts, counting bytes and hashing run
+ * on a later tick. Doing that work inline would delay the request and distort
+ * the tok/s metrics this plugin measures.
  *
  * Metrics and rate history are computed entirely in the GUI bundle.
  */
@@ -12,9 +17,9 @@
 import { Plugin } from "@opencode/plugin";
 import type { SessionContext } from "@opencode/plugin/promise/session";
 
-import { createCaptureStore } from "./src/capture.js";
 import { StatsRpc } from "./src/gui/contract.js";
 import { createRpcHandlers } from "./src/rpc.js";
+import { statsRuntime } from "./src/runtime.js";
 
 type Ctx = Plugin.Context;
 
@@ -23,24 +28,26 @@ function errorText(error: unknown): string {
 }
 
 /**
- * The capture store is process-global, not per setup: a hot reload registers a
- * new RPC while an older route can still serve a window, and the context hook
- * that captures may belong to either generation. A shared store keeps the
- * prompt visible across reloads; the process exit reclaims it.
+ * Store, scheduler and switch are process-global (see `src/runtime.ts`) so a
+ * hot reload keeps one queue and one switch across generations.
  */
-const STORE_KEY = "__opencodeStatsCaptureStore__" as const;
-const globals = globalThis as typeof globalThis & {
-  __opencodeStatsCaptureStore__?: ReturnType<typeof createCaptureStore>;
-};
-const store = (globals[STORE_KEY] ??= createCaptureStore());
+const runtime = statsRuntime();
 
 export default Plugin.define({
   id: "stats",
   async setup(ctx: Ctx) {
+    // Hydration is async because storage is async; the hook keeps its
+    // synchronous default (enabled) until the stored value arrives. A stored
+    // `false` clears whatever was captured in the meantime.
+    void runtime.bindStorage(ctx.storage).catch((error: unknown) => {
+      console.error(`[stats] could not read observability: ${errorText(error)}`);
+    });
+
     const registrations = await Promise.all([
       ctx.session.hook("context", (event: SessionContext) => {
+        if (!runtime.observability.enabled) return;
         try {
-          store.capture({
+          runtime.scheduler.enqueue({
             sessionID: String(event.sessionID),
             agent: String(event.agent),
             model: {
@@ -48,14 +55,15 @@ export default Plugin.define({
               id: String(event.model.id),
               ...(event.model.variant ? { variant: String(event.model.variant) } : {}),
             },
-            system: event.system,
+            // Shallow copy only: the array is cheap, the strings are immutable.
+            system: event.system.slice(),
           });
         } catch (error) {
           // Never break a model request because the prompt viewer failed.
-          console.error(`[stats] could not capture system prompt: ${errorText(error)}`);
+          console.error(`[stats] could not queue system prompt: ${errorText(error)}`);
         }
       }),
-      ctx.rpc.register(StatsRpc, createRpcHandlers(store)),
+      ctx.rpc.register(StatsRpc, createRpcHandlers(runtime)),
     ]);
 
     return async () => {

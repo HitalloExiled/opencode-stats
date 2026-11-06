@@ -13,7 +13,7 @@ npm run typecheck          # tsc --noEmit (index.ts + src/**/*.ts)
 npm run typecheck:gui      # tsc --noEmit -p tsconfig.gui.json
 npm run gui:build          # vite build -> dist/gui-experimental.cjs
 npm run gui:watch          # rebuild contínuo
-bun test test              # testes puros (metrics/history/chart/prompt/capture)
+bun test test              # testes puros (metrics/history/chart/prompt/capture/scheduler/observability/rpc)
 ```
 
 No repo pai (`opencode-tools`):
@@ -34,15 +34,19 @@ src/
   capture.ts             # store em memória (dedupe por hash, LRU)
   prompt.ts              # classificação pura do system prompt
   rpc.ts                 # RpcHandlers<typeof StatsRpc>
+  scheduler.ts           # fila adiada e coalescida da captura
+  observability.ts       # interruptor em memória + ctx.storage
+  runtime.ts             # store/scheduler/observability globais
   metrics.ts             # métricas puras da transcrição
   history.ts             # ring buffer/escala/paths (puro)
   format.ts              # formatação locale-aware
   gui.tsx                # Plugin.define da GUI (./gui-experimental)
   gui/
-    contract.ts          # StatsRpc + tipos PromptPart/PromptCapture
+    contract.ts          # StatsRpc + tipos PromptPart/PromptCapture/ObservabilityStatus
     setup.tsx            # Panel (abas stats/prompt) + Command + MenuItem
     stats.tsx            # aba Estatísticas
     prompt.tsx           # aba System prompt
+    observability.ts     # estado compartilhado do interruptor + visibilidade
     gauge.tsx            # gauge SVG semicircular
     chart.tsx            # gráfico de linha/área SVG
     header.tsx           # Slot session.header
@@ -54,10 +58,30 @@ test/                    # bun:test das funções puras
 
 - `index.ts` registra `ctx.session.hook("context", ...)` e
   `ctx.rpc.register(StatsRpc, handlers)`; o teardown descarta as duas
-  assinaturas e limpa o store.
-- O hook captura `event.system: SystemPart[]`, `event.agent` e `event.model`.
+  assinaturas.
+- O hook **não pode bloquear o caminho do request**: ele só lê
+  `event.system.slice()`, `event.agent` e `event.model` e chama
+  `runtime.scheduler.enqueue(...)`. Nada de classificação, contagem de bytes ou
+  hash inline: esse trabalho atrasaria o request e distorceria o tok/s medido.
   Nunca deixe uma exceção da captura derrubar o request do modelo: o callback
   tem `try/catch` e loga em `console.error`.
+- `src/scheduler.ts` guarda a última captura por sessão e drena no próximo
+  `setImmediate`. Coalesce por sessão (a mais recente vence), conta
+  `captured/coalesced/batches/dropped/errors`, mede lag e tempo de flush e
+  engole falhas de captura via `onError`. `setEnabled(false)` descarta a fila.
+- `src/observability.ts` mantém o interruptor **síncrono** lido pelo hook
+  (default `true`), hidratado de `ctx.storage.get("observability")` e persistido
+  com escrita serializada. Desligar limpa o store e a fila; religar retoma no
+  próximo request. Um toggle explícito vence uma hidratação tardia.
+- `src/runtime.ts` mantém store, scheduler e observabilidade em
+  `globalThis.__opencodeStatsRuntime__`: um hot reload registra uma RPC nova
+  enquanto uma rota antiga ainda pode servir a janela, e o hook pode pertencer a
+  qualquer geração. O teardown **não** limpa o runtime; só o usuário desliga.
+  Mantenha essa propriedade se refatorar o ciclo de vida.
+- A RPC `opencode.stats/systemPrompt` recebe `{ sessionID, ifNoneMatch? }` e
+  devolve `{ status: "missing" }`, `{ status: "unchanged", hash, capturedAt,
+  requestCount }` ou `{ status: "capture", capture }`. `observability` devolve o
+  status do pipeline e `setObservability({ enabled })` alterna e persiste.
 - `src/prompt.ts` é puro e não importa nada do runtime do servidor; ele expande
   `metadata.experimental.instructions` e classifica as chaves:
   - `core/instructions` → grupo `added`;
@@ -66,14 +90,7 @@ test/                    # bun:test das funções puras
   - partes extras → `dynamic`, com detecção de tags de plugins.
 - `src/capture.ts` guarda a última captura por sessão em memória, deduplica por
   SHA-256, conta requests e aplica LRU por número de sessões e bytes totais.
-  Não persiste nada.
-- O store é **process-global** (`globalThis.__opencodeStatsCaptureStore__`), não
-  criado dentro de `setup`: um hot reload registra uma RPC nova enquanto uma
-  rota antiga ainda pode servir a janela, e o hook que captura pode pertencer a
-  qualquer geração. O teardown **não** limpa o store; o processo o libera ao
-  sair. Mantenha essa propriedade se refatorar o ciclo de vida.
-- A RPC `opencode.stats/systemPrompt` recebe `{ sessionID }` e devolve
-  `PromptCapture | null`.
+  `peek` lê sem tocar no LRU (usado pelo status). Não persiste nada.
 
 A ordem de carregamento importa: `stats` é carregado depois de `memory`,
 `notes` e `plans` (ordem alfabética dos diretórios), então vê os blocos que eles
@@ -88,7 +105,8 @@ classificado; documente isso se for adicionar um fallback.
   - `prompt` — abre pelo comando/menu, renderiza `PromptView` quando está em
     `input.open`.
   O `render` é keyed por `props.session.key` para zerar buffers ao trocar de
-  sessão.
+  sessão. O setup também registra o comando e a entrada de menu
+  **Ativar/Desativar observabilidade** (título reativo pelo signal).
 - `usePlugin()` só funciona dentro de contributions. **Não use `useT()` no
   setup**; leia `ctx.locale.locale()` diretamente (o setup não está sob o
   provider).
@@ -102,8 +120,17 @@ classificado; documente isso se for adicionar um fallback.
   - histórico ativo: `client.session.context({ sessionID })`, mesclado por id
     com a janela viva;
   - status: `data.session.status(id)`;
-  - prompt: `client.rpc(StatsRpc).systemPrompt(...)` com
-    `{ location: { directory: session.directory } }`.
+  - prompt: `client.rpc(StatsRpc).systemPrompt({ sessionID, ifNoneMatch }, ...)`
+    com `{ location: { directory: session.directory } }`; trate os três
+    `status` (`missing`/`unchanged`/`capture`);
+  - interruptor: `observability()` / `setObservability({ enabled })`.
+- `src/gui/observability.ts` guarda o status do interruptor em um signal de
+  módulo, compartilhado por `StatsView`, `StatsStrip` e `PromptView` (o estado é
+  global ao processo). Não mantenha cópia local em cada componente.
+- Com a observabilidade desligada, a aba Estatísticas mostra só o estado
+  desativado com o botão de reativar, a faixa do cabeçalho some e a aba do
+  prompt não chama a RPC. O sampler de 1 Hz, o fetch de `session.context` e o
+  ponto exato do passo só rodam com ela ligada e com o documento visível.
 - O ring buffer de tok/s guarda 300 amostras por turno, amostra a 1 Hz enquanto
   `running`. O ponto exato entra quando o passo completa. A escala do gauge só
   cresce (`niceScale`).

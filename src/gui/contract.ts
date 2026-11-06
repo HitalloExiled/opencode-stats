@@ -54,6 +54,36 @@ export type PromptCapture = {
   requestCount: number;
 };
 
+/** `unchanged` skips the full payload when the caller already has the hash. */
+export type PromptResult =
+  | { status: "missing" }
+  | {
+      status: "unchanged";
+      hash: string;
+      capturedAt: number;
+      requestCount: number;
+    }
+  | { status: "capture"; capture: PromptCapture };
+
+/** Process-wide state of the capture pipeline, served to the panel. */
+export type ObservabilityStatus = {
+  enabled: boolean;
+  /** When the current state was applied. */
+  since: number;
+  /** Sessions kept in the capture store. */
+  sessions: number;
+  /** Bytes kept in the capture store. */
+  bytes: number;
+  /** Snapshots waiting for the deferred flush. */
+  pending: number;
+  captured: number;
+  coalesced: number;
+  batches: number;
+  maxLagMs: number;
+  lastProcessMs: number;
+  maxProcessMs: number;
+};
+
 /* ------------------------------------------------------------------ */
 /* Schemas                                                             */
 /* ------------------------------------------------------------------ */
@@ -99,6 +129,48 @@ export const promptCaptureSchema = Schema.Struct({
   requestCount: Schema.Number,
 });
 
+const promptMissingSchema = Schema.Struct({
+  status: Schema.Literal("missing"),
+});
+
+const promptUnchangedSchema = Schema.Struct({
+  status: Schema.Literal("unchanged"),
+  hash: Schema.String,
+  capturedAt: Schema.Number,
+  requestCount: Schema.Number,
+});
+
+const promptCaptureResultSchema = Schema.Struct({
+  status: Schema.Literal("capture"),
+  capture: promptCaptureSchema,
+});
+
+export const promptResultSchema = Schema.Union([
+  promptMissingSchema,
+  promptUnchangedSchema,
+  promptCaptureResultSchema,
+]);
+
+export const observabilityStatusSchema = Schema.Struct({
+  enabled: Schema.Boolean,
+  since: Schema.Number,
+  sessions: Schema.Number,
+  bytes: Schema.Number,
+  pending: Schema.Number,
+  captured: Schema.Number,
+  coalesced: Schema.Number,
+  batches: Schema.Number,
+  maxLagMs: Schema.Number,
+  lastProcessMs: Schema.Number,
+  maxProcessMs: Schema.Number,
+});
+
+const systemPromptInputSchema = Schema.Struct({
+  sessionID: Schema.String,
+  /** Hash the caller already holds; a match returns `unchanged` without parts. */
+  ifNoneMatch: optString,
+});
+
 /* ------------------------------------------------------------------ */
 /* The RPC                                                             */
 /* ------------------------------------------------------------------ */
@@ -107,8 +179,16 @@ export const StatsRpc = Rpc.define({
   id: "opencode.stats",
   methods: {
     systemPrompt: {
-      input: Schema.toStandardSchemaV1(Schema.Struct({ sessionID: Schema.String })),
-      output: Schema.toStandardSchemaV1(Schema.NullOr(promptCaptureSchema)),
+      input: Schema.toStandardSchemaV1(systemPromptInputSchema),
+      output: Schema.toStandardSchemaV1(promptResultSchema),
+    },
+    observability: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({})),
+      output: Schema.toStandardSchemaV1(observabilityStatusSchema),
+    },
+    setObservability: {
+      input: Schema.toStandardSchemaV1(Schema.Struct({ enabled: Schema.Boolean })),
+      output: Schema.toStandardSchemaV1(observabilityStatusSchema),
     },
   },
   events: {},

@@ -17,6 +17,11 @@ import type {
 import { Command, MenuItem, Panel } from "@opencode/plugin/gui";
 
 import { PromptView } from "./prompt";
+import {
+  observabilityEnabled,
+  refreshObservability,
+  setObservability,
+} from "./observability";
 import { StatsView } from "./stats";
 
 export const statsTabID = "stats";
@@ -76,6 +81,26 @@ export function setup(ctx: SetupContext<never>): void {
     if (session) ctx.layout.open(`${ctx.id}:${promptTabID}`, session);
   };
 
+  const toggleObservability = async () => {
+    const session = ctx.sessions.current();
+    if (!session) {
+      ctx.toast.show({
+        title: text("Abra uma sessão primeiro", "Open a session first"),
+        variant: "error",
+      });
+      return;
+    }
+    // The switch is server state and may have changed from another window.
+    await refreshObservability(session);
+    const result = await setObservability(session, !observabilityEnabled());
+    const title = !result
+      ? text("Não foi possível alterar a observabilidade", "Could not change observability")
+      : result.enabled
+        ? text("Observabilidade ativada", "Observability enabled")
+        : text("Observabilidade desativada", "Observability disabled");
+    ctx.toast.show({ title, variant: result ? "success" : "error" });
+  };
+
   ctx.add(Command, () => ({
     id: "open-stats",
     get title() {
@@ -106,6 +131,37 @@ export function setup(ctx: SetupContext<never>): void {
     bind: "mod+shift+i",
     group: "general",
     run: openPrompt,
+  }));
+
+  ctx.add(Command, () => ({
+    id: "toggle-observability",
+    get title() {
+      return observabilityEnabled()
+        ? text("Desativar observabilidade", "Disable observability")
+        : text("Ativar observabilidade", "Enable observability");
+    },
+    get description() {
+      return text(
+        "Pausa ou retoma a captura de métricas e do prompt do sistema",
+        "Pauses or resumes metrics and system prompt capture",
+      );
+    },
+    group: "general",
+    run: () => void toggleObservability(),
+  }));
+
+  ctx.add(MenuItem, (): SessionPanelMenuItem => ({
+    menu: "session.panel",
+    id: "observability",
+    get title() {
+      return observabilityEnabled()
+        ? text("Desativar observabilidade", "Disable observability")
+        : text("Ativar observabilidade", "Enable observability");
+    },
+    get icon() {
+      return observabilityEnabled() ? "outline-eye" : "outline-eye-slash";
+    },
+    run: () => void toggleObservability(),
   }));
 
   ctx.add(MenuItem, (): SessionPanelMenuItem => ({

@@ -15,6 +15,12 @@ Duas abas no painel lateral:
 Além disso, uma faixa compacta no cabeçalho da sessão mostra o tok/s atual, a
 duração, o reasoning e a quantidade de tool calls do último turno.
 
+Um botão de olho na aba Estatísticas **liga e desliga a observabilidade** de
+todo o processo: com ela desligada, a captura do prompt e a amostragem de tok/s
+param, a faixa do cabeçalho some e as duas abas mostram um estado desativado com
+a ação de reativar. O estado fica no `ctx.storage` do servidor (chave
+`observability`), então sobrevive a reinícios e hot reloads.
+
 O plugin é autocontido: só usa `@opencode/plugin`, `effect` e `solid-js`, e não
 grava nada no repositório. O prompt capturado fica **em memória** no processo do
 servidor; não há banco novo.
@@ -74,18 +80,24 @@ ferramenta e as pausas de raciocínio ficam fora da conta.
   captura e contador de requests.
 - Antes do primeiro request da sessão a aba mostra um estado vazio explicando
   que a captura acontece no próximo request.
+- Com a observabilidade desligada, a aba mostra o estado desativado e um botão
+  para reativar; nenhuma RPC de prompt é chamada.
 
 ### Faixa do cabeçalho
 
 `⚡ ~27.4 tok/s · 🕐 18.6s · 🧠 1.2k · 🔧 7 tools`, com um pulso enquanto gera.
 O valor exato substitui a estimativa quando o passo termina. Clicar abre a aba
-Estatísticas. A faixa não aparece em sessões sem passos do assistente.
+Estatísticas. A faixa não aparece em sessões sem passos do assistente nem com a
+observabilidade desligada.
 
 ## Atalhos e comandos
 
 - `mod+shift+s` — abrir Estatísticas.
 - `mod+shift+i` — abrir System prompt.
-- Menu do painel da sessão — entradas **Estatísticas** e **System prompt**.
+- Menu do painel da sessão — entradas **Estatísticas**, **System prompt** e
+  **Ativar/Desativar observabilidade**.
+- Paleta de comandos — **Ativar/Desativar observabilidade** (mostra um toast com
+  o novo estado).
 
 ## Como funciona
 
@@ -95,16 +107,30 @@ O plugin tem duas partes:
   array `system` montado para o request. A segunda parte normalmente carrega
   `metadata.experimental.instructions`, com uma entrada `{ key, text }` por
   fonte; os plugins `notes`, `memory` e `plans` acrescentam partes extras
-  depois. A última captura de cada sessão fica em memória (hash, agente, modelo,
-  `capturedAt` e contador de requests) e é servida pela RPC `systemPrompt`.
+  depois. O hook **não** classifica nem faz hash: ele tira um snapshot raso do
+  array e enfileira no scheduler; a classificação, a contagem de bytes e o
+  SHA-256 rodam no próximo tick (`setImmediate`), fora do caminho do request.
+  O scheduler junta por sessão (a captura mais recente vence) e registra
+  coalescência, lag e tempo de processamento. A última captura de cada sessão
+  fica em memória (hash, agente, modelo, `capturedAt` e contador de requests) e
+  é servida pela RPC `systemPrompt`, que aceita `ifNoneMatch` para não reenviar
+  o payload quando o hash não mudou.
 - **GUI** (`src/gui.tsx`): calcula métricas e histórico a partir de
   `session.server.data` e desenha o gauge/gráfico em SVG, sem biblioteca de
   charts. O histórico da sessão vem de `session.context` (o histórico ativo,
   depois da última compactação), mesclado com a janela viva da timeline.
 
+Store, scheduler e chave de observabilidade são **globais ao processo**
+(`globalThis.__opencodeStatsRuntime__`), não recriados a cada `setup`: um hot
+reload mantém uma fila e um interruptor só. O teardown descarta as assinaturas,
+mas não limpa o store; apenas desligar a observabilidade limpa.
+
 ## Dados e privacidade
 
 - Nenhum banco novo, nenhum arquivo no repositório.
+- A única coisa persistida é o booleano da observabilidade no `ctx.storage` do
+  plugin (chave `observability`), o mesmo mecanismo usado pelo `plans` para o
+  locale. As capturas e as séries continuam só em memória.
 - A captura do prompt fica só no processo do servidor, em um store global ao
   processo (sobrevive ao hot reload do plugin), e é perdida ao reiniciar; o
   próximo request recaptura.
@@ -122,6 +148,11 @@ O plugin tem duas partes:
 - Sem diff entre capturas e sem persistência das séries entre reinícios.
 - tok/s ao vivo é uma estimativa por caracteres ÷ 4; o valor exato substitui a
   estimativa ao concluir o passo.
+- A leitura do interruptor no `ctx.storage` é assíncrona. Um request que chegue
+  antes da hidratação pode ser capturado mesmo com o estado persistido em
+  `false`; ao ler `false`, o plugin limpa as capturas e a fila.
+- Capturas da mesma sessão enfileiradas no mesmo tick são coalescidas (a mais
+  recente vence). O painel mostra sempre a última.
 
 ## Estrutura
 
@@ -131,6 +162,9 @@ src/
   capture.ts             # store em memória + dedupe/LRU
   prompt.ts              # classificação do system prompt (puro)
   rpc.ts                 # handlers RPC
+  scheduler.ts           # fila adiada e coalescida da captura
+  observability.ts       # interruptor em memória + ctx.storage
+  runtime.ts             # store/scheduler/observability globais
   metrics.ts             # turnos, tok/s, durações, reasoning, tools, totais
   history.ts             # ring buffer, escala, paths do gráfico (puro)
   format.ts              # duração, tokens, taxa, bytes
@@ -140,6 +174,7 @@ src/
     setup.tsx            # painel de duas abas + comandos + menu
     stats.tsx            # aba Estatísticas
     prompt.tsx           # aba System prompt
+    observability.ts     # estado compartilhado do interruptor
     gauge.tsx            # gauge SVG
     chart.tsx            # gráfico de linha SVG
     header.tsx           # faixa do cabeçalho

@@ -69,6 +69,11 @@ const EN: Table = {
   "stats.show": "Show",
   "stats.hide": "Hide",
 
+  "observability.enable": "Enable observability",
+  "observability.disable": "Disable observability",
+  "stats.disabled": "Observability is off",
+  "stats.disabledHint": "Metrics and prompt capture are paused. Enable it to start measuring again.",
+
   "prompt.title": "System prompt",
   "prompt.scope": "current session",
   "prompt.capturedAt": "captured at {0}",
@@ -104,6 +109,8 @@ const EN: Table = {
   "prompt.searchPlaceholder": "Filter parts…",
   "prompt.noMatch": "No parts match the filter.",
   "prompt.fullHint": "The text follows the request order.",
+  "prompt.disabled": "Observability is off",
+  "prompt.disabledHint": "The system prompt is not captured while observability is off.",
 
   "part.base": "Base prompt",
   "part.codemode": "Code Mode",
@@ -198,6 +205,11 @@ const PT: Table = {
   "stats.show": "Mostrar",
   "stats.hide": "Ocultar",
 
+  "observability.enable": "Ativar observabilidade",
+  "observability.disable": "Desativar observabilidade",
+  "stats.disabled": "Observabilidade desativada",
+  "stats.disabledHint": "As métricas e a captura do prompt estão pausadas. Ative para voltar a medir.",
+
   "prompt.title": "Prompt do sistema",
   "prompt.scope": "sessão atual",
   "prompt.capturedAt": "capturado às {0}",
@@ -234,6 +246,8 @@ const PT: Table = {
   "prompt.searchPlaceholder": "Filtrar partes…",
   "prompt.noMatch": "Nenhuma parte corresponde ao filtro.",
   "prompt.fullHint": "O texto segue a ordem da requisição.",
+  "prompt.disabled": "Observabilidade desativada",
+  "prompt.disabledHint": "O prompt do sistema não é capturado enquanto a observabilidade estiver desligada.",
 
   "part.base": "Prompt base",
   "part.codemode": "Code Mode",

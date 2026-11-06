@@ -13,6 +13,7 @@ import type { MountedSession } from "@opencode/plugin/gui";
 import { formatDuration, formatRate, formatTokens } from "../format";
 import { analyzeTurn, findTurns, lastAssistantTurn } from "../metrics";
 import { useLocale, useT } from "./i18n";
+import { useObservability } from "./observability";
 
 const CSS = `
 .stats-strip {
@@ -52,6 +53,7 @@ export function StatsStrip(props: { session: MountedSession; active: boolean }) 
   const ctx = usePlugin();
   const t = useT();
   const locale = useLocale();
+  const observability = useObservability(props.session);
 
   const messages = createMemo(() =>
     props.session.id ? props.session.server.data.session.message.list(props.session.id) : [],
@@ -63,7 +65,7 @@ export function StatsStrip(props: { session: MountedSession; active: boolean }) 
 
   const [now, setNow] = createSignal(Date.now());
   createEffect(() => {
-    if (!props.active || !running()) return;
+    if (!props.active || observability.hidden() || !running()) return;
     const timer = setInterval(() => setNow(Date.now()), 500);
     onCleanup(() => clearInterval(timer));
   });
@@ -102,7 +104,7 @@ export function StatsStrip(props: { session: MountedSession; active: boolean }) 
   };
 
   return (
-    <Show when={turn() && turn()!.steps.length > 0}>
+    <Show when={observability.enabled() && turn() && turn()!.steps.length > 0}>
       <style>{CSS}</style>
       <button class="stats-strip" type="button" onClick={open} title={title()} aria-label={title()}>
         <Show when={live()}>
