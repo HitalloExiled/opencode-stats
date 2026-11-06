@@ -153,6 +153,16 @@ const CSS = `
 .stats-model-chip { width: 7px; height: 7px; border-radius: 2px; flex: none; background: var(--stats-output); }
 .stats-model-name { color: var(--v2-text-text-muted, #9b9b9b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stats-model-count { color: var(--v2-text-text-faint, #6e6e6e); font-variant-numeric: tabular-nums; font-size: 10px; margin-left: auto; }
+.stats-context { display: flex; flex-direction: column; gap: 3px; }
+.stats-context-head { display: flex; align-items: baseline; gap: 5px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; }
+.stats-context-head b { color: var(--v2-text-text-base, #e8e8e8); font-weight: 650; font-variant-numeric: tabular-nums; }
+.stats-context-head b.is-warn { color: var(--v2-text-text-warning, #f0b44c); }
+.stats-context-head b.is-danger { color: var(--stats-error); }
+.stats-context-sep { color: var(--v2-text-text-faint, #6e6e6e); }
+.stats-context-bar { height: 5px; border-radius: 999px; background: var(--v2-background-bg-layer-03, #2a2a2a); border: 1px solid var(--v2-border-border-muted, #303030); overflow: hidden; }
+.stats-context-fill { display: block; height: 100%; border-radius: 999px; background: var(--stats-output); transition: width 200ms ease; }
+.stats-context-fill.is-warn { background: var(--v2-text-text-warning, #f0b44c); }
+.stats-context-fill.is-danger { background: var(--stats-error); }
 .stats-note { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; display: flex; align-items: center; gap: 6px; padding: 0 2px; }
 .stats-banner { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 8px; padding: 7px 9px; color: var(--v2-text-text-muted, #9b9b9b); font-size: 10.5px; display: flex; align-items: center; gap: 7px; }
 .stats-banner.is-error { color: var(--stats-error); border-color: color-mix(in srgb, var(--stats-error) 30%, transparent); background: color-mix(in srgb, var(--stats-error) 8%, transparent); }
@@ -461,6 +471,24 @@ export function StatsView(props: { session: MountedSession }) {
       entry.share = total > 0 ? (entry.value / total) * 100 : 0;
     }
     return { entries, total, hasRequest: true };
+  });
+
+  const contextLimit = createMemo(() => {
+    const request = sessionMetrics().lastRequest;
+    if (!request) return undefined;
+    const models = data.location.model.list(session.location);
+    const entry = models?.find(
+      (item) => item.providerID === request.model.providerID && item.id === request.model.id,
+    );
+    const limit = entry?.limit.context;
+    return limit !== undefined && limit > 0 ? limit : undefined;
+  });
+
+  const contextUsage = createMemo(() => {
+    const limit = contextLimit();
+    const total = tokenParts().total;
+    if (limit === undefined || total <= 0) return undefined;
+    return (total / limit) * 100;
   });
 
   const maxToolCalls = createMemo(() =>
@@ -785,6 +813,40 @@ export function StatsView(props: { session: MountedSession }) {
                 : t("stats.processedHint")}
             </span>
           </div>
+
+          <Show when={tokenView() === "context" && contextLimit() !== undefined}>
+            <div class="stats-context">
+              <div class="stats-context-head">
+                <span>{t("stats.contextWindow")}</span>
+                <b>{formatTokens(tokenParts().total, locale)}</b>
+                <span class="stats-context-sep">/</span>
+                <span>{formatTokens(contextLimit() ?? 0, locale)}</span>
+                <span class="stats-spacer" />
+                <b
+                  classList={{
+                    "is-warn": (contextUsage() ?? 0) >= 60 && (contextUsage() ?? 0) < 85,
+                    "is-danger": (contextUsage() ?? 0) >= 85,
+                  }}
+                >
+                  {formatPercent(contextUsage(), locale, 1)}
+                </b>
+              </div>
+              <div
+                class="stats-context-bar"
+                role="img"
+                aria-label={t("stats.contextUsage", formatPercent(contextUsage(), locale, 1))}
+              >
+                <span
+                  class="stats-context-fill"
+                  classList={{
+                    "is-warn": (contextUsage() ?? 0) >= 60 && (contextUsage() ?? 0) < 85,
+                    "is-danger": (contextUsage() ?? 0) >= 85,
+                  }}
+                  style={{ width: `${Math.min(100, contextUsage() ?? 0)}%` }}
+                />
+              </div>
+            </div>
+          </Show>
 
           <div class="stats-metric">
             <span class="stats-metric-lead is-tool">

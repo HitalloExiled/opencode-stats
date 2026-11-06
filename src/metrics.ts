@@ -92,6 +92,8 @@ export type ModelStat = {
 export type RequestUsage = {
   tokens: TokenUsageInfo;
   toolTokens: number;
+  /** Model that served the request, used to look up its context-window limit. */
+  model: ModelRef;
 };
 
 export type SessionMetrics = {
@@ -441,7 +443,11 @@ export function analyzeSession(messages: readonly SessionMessageInfo[]): Session
   for (const step of steps) {
     toolTokens += step.toolTokens;
     if (step.message.tokens && step.message.time.completed !== undefined) {
-      lastRequest = { tokens: step.message.tokens, toolTokens: step.toolTokens };
+      lastRequest = {
+        tokens: step.message.tokens,
+        toolTokens: step.toolTokens,
+        model: step.message.model,
+      };
     }
     for (const call of step.toolCalls) {
       const stat = tools.get(call.name) ?? {

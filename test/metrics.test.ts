@@ -365,6 +365,8 @@ describe("analyzeSession", () => {
 
     expect(metrics.lastRequest?.tokens.output).toBe(10);
     expect(metrics.lastRequest?.toolTokens).toBe(2);
+    expect(metrics.lastRequest?.model.id).toBe("bonsai");
+    expect(metrics.lastRequest?.model.providerID).toBe("local");
   });
 
   test("includes compaction tokens and cost", () => {
