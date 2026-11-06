@@ -127,8 +127,13 @@ const CSS = `
 .stats-stat-key { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; font-weight: 650; letter-spacing: 0.45px; text-transform: uppercase; }
 .stats-stat-value { color: var(--v2-text-text-base, #e8e8e8); font-size: 14.5px; font-weight: 680; font-variant-numeric: tabular-nums; margin-top: 1px; }
 .stats-stat-value small { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; font-weight: 500; }
-.stats-token-head { display: flex; align-items: baseline; gap: 6px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 10px; }
+.stats-token-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 10px; }
 .stats-token-head b { color: var(--v2-text-text-base, #e8e8e8); font-weight: 650; font-size: 10.5px; }
+.stats-token-view { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 7px; }
+.stats-token-view button { appearance: none; border: 0; background: transparent; color: var(--v2-text-text-muted, #9b9b9b); font: inherit; font-size: 9.5px; padding: 2px 7px; border-radius: 5px; cursor: pointer; }
+.stats-token-view button:hover { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-hover, #262626); }
+.stats-token-view button.is-active { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-pressed, #303030); font-weight: 650; }
+.stats-token-view button:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
 .stats-token-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--v2-background-bg-layer-03, #2a2a2a); border: 1px solid var(--v2-border-border-muted, #303030); }
 .stats-token-seg { height: 100%; min-width: 0; }
 .stats-legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 9.5px; color: var(--v2-text-text-faint, #6e6e6e); }
@@ -212,6 +217,7 @@ export function StatsView(props: { session: MountedSession }) {
   const [now, setNow] = createSignal(Date.now());
   const [range, setRange] = createSignal<ChartRange>("turn");
   const [scaleMax, setScaleMax] = createSignal(40);
+  const [tokenView, setTokenView] = createSignal<"processed" | "context">("processed");
 
   const messages = createMemo(() => mergeMessages(full(), loaded()));
   const turns = createMemo(() => findTurns(messages()));
@@ -402,6 +408,36 @@ export function StatsView(props: { session: MountedSession }) {
 
   const tokenParts = createMemo(() => {
     const metrics = sessionMetrics();
+
+    if (tokenView() === "context") {
+      const request = metrics.lastRequest;
+      if (!request) return { entries: [], total: 0, hasRequest: false };
+      const tokens = request.tokens;
+      // The context window of the last request is its prompt: uncached input
+      // plus the cached prefix. Output/reasoning are generated, not part of it.
+      const toolTokens = Math.min(request.toolTokens, tokens.input);
+      const entries = [
+        {
+          key: "input",
+          value: Math.max(0, tokens.input - toolTokens),
+          color: "var(--stats-input)",
+          share: 0,
+        },
+        { key: "toolResults", value: toolTokens, color: "var(--stats-tools)", share: 0 },
+        {
+          key: "cache",
+          value: tokens.cache.read + tokens.cache.write,
+          color: "var(--stats-cache)",
+          share: 0,
+        },
+      ];
+      const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+      for (const entry of entries) {
+        entry.share = total > 0 ? (entry.value / total) * 100 : 0;
+      }
+      return { entries, total, hasRequest: true };
+    }
+
     const tokens = metrics.tokens;
     // Tool results ride inside the provider's input count. Carve the estimate
     // out of input so the segments still sum to the provider total instead of
@@ -424,7 +460,7 @@ export function StatsView(props: { session: MountedSession }) {
     for (const entry of entries) {
       entry.share = total > 0 ? (entry.value / total) * 100 : 0;
     }
-    return { entries };
+    return { entries, total, hasRequest: true };
   });
 
   const maxToolCalls = createMemo(() =>
@@ -694,9 +730,24 @@ export function StatsView(props: { session: MountedSession }) {
           <div class="stats-token-head">
             <Icon path={CHART} size={12} />
             <span>{t("stats.tokens")}</span>
-            <b>{formatTokens(totalTokens(sessionMetrics().tokens), locale)}</b>
+            <b>{tokenParts().total > 0 ? formatTokens(tokenParts().total, locale) : "—"}</b>
             <span class="stats-spacer" />
-            <span>{t("stats.tokenComposition")}</span>
+            <div class="stats-token-view" role="group" aria-label={t("stats.tokenComposition")}>
+              <button
+                type="button"
+                classList={{ "is-active": tokenView() === "processed" }}
+                onClick={() => setTokenView("processed")}
+              >
+                {t("stats.tokenProcessed")}
+              </button>
+              <button
+                type="button"
+                classList={{ "is-active": tokenView() === "context" }}
+                onClick={() => setTokenView("context")}
+              >
+                {t("stats.tokenContext")}
+              </button>
+            </div>
           </div>
           <div class="stats-token-bar" role="img" aria-label={t("stats.tokenComposition")}>
             <For each={tokenParts().entries}>
@@ -722,6 +773,17 @@ export function StatsView(props: { session: MountedSession }) {
                 </span>
               )}
             </For>
+          </div>
+
+          <div class="stats-note">
+            <Icon path={INFO} size={10} />
+            <span>
+              {tokenView() === "context"
+                ? tokenParts().hasRequest
+                  ? t("stats.contextHint")
+                  : t("stats.contextEmpty")
+                : t("stats.processedHint")}
+            </span>
           </div>
 
           <div class="stats-metric">

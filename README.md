@@ -61,9 +61,11 @@ symlink, instala as dependências e compila o bundle da GUI.
 - **Turno atual**: duração, output, 1º token, reasoning (tokens, tempo e
   participação no output) e tool calls com status, duração e argumento resumido.
 - **Sessão**: turnos, passos, tempo médio por resposta e por turno, tok/s
-  médio/máximo, composição de tokens (input, ferramentas estimadas, output,
-  reasoning e cache), custo, taxa de sucesso e ranking de ferramentas, além de
-  passos/tokens por modelo.
+  médio/máximo, composição de tokens em duas visões — **Processados** (todos os
+  passos desde a última compactação: input, ferramentas estimadas, output,
+  reasoning e cache) e **Contexto** (prompt do último request concluído: input,
+  ferramentas estimadas e cache) —, custo, taxa de sucesso e ranking de
+  ferramentas, além de passos/tokens por modelo.
 
 O tok/s usa a mesma fórmula do rodapé do TUI: `(output + reasoning) /
 (streamed - created)` por passo, agregado antes de dividir. O tempo de
@@ -162,7 +164,8 @@ mas não limpa o store; apenas desligar a observabilidade limpa.
 - O segmento **ferramentas** da composição de tokens é uma estimativa pelos
   caracteres do conteúdo retornado pelas tools (÷ 4), descontada do input para
   não contar os mesmos tokens duas vezes. O provider não reporta tokens de
-  ferramenta separadamente.
+  ferramenta separadamente. Na visão **Contexto**, o total é o prompt do último
+  request concluído (`input + cache`), sem output/reasoning.
 - A leitura do interruptor no `ctx.storage` é assíncrona. Um request que chegue
   antes da hidratação pode ser capturado mesmo com o estado persistido em
   `false`; ao ler `false`, o plugin limpa as capturas e a fila.

@@ -161,6 +161,9 @@ describe("stepMetrics", () => {
     expect(step.toolCalls[1]!.status).toBe("error");
     expect(step.toolCalls[2]!.status).toBe("running");
     expect(step.toolCalls[2]!.startedAt).toBe(2800);
+    // Only the completed call has content ("ok" = 2 chars -> 1 token); the
+    // error call carries no content and the running one has no result yet.
+    expect(step.toolTokens).toBe(1);
   });
 });
 
@@ -337,6 +340,31 @@ describe("analyzeSession", () => {
 
     // 8 chars -> 2 tokens, 5 chars -> 2 tokens, running content -> 0.
     expect(analyzeSession(messages).toolTokens).toBe(4);
+  });
+
+  test("exposes the last completed request usage", () => {
+    const messages = [
+      user("u1", 1000),
+      assistant({
+        id: "a1",
+        created: 1100,
+        completed: 2000,
+        output: 10,
+        content: [
+          { type: "text", text: "answer" },
+          tool({ id: "t1", name: "read", created: 1200, text: "abcdefgh" }),
+        ],
+      }),
+      user("u2", 3000),
+      // Still streaming: no completion time, so it must not replace the last
+      // completed request.
+      assistant({ id: "a2", created: 3100, output: 20 }),
+    ];
+
+    const metrics = analyzeSession(messages);
+
+    expect(metrics.lastRequest?.tokens.output).toBe(10);
+    expect(metrics.lastRequest?.toolTokens).toBe(2);
   });
 
   test("includes compaction tokens and cost", () => {

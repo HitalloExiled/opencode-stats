@@ -37,6 +37,8 @@ export type StepMetrics = {
   rate?: number | undefined;
   outputTokens: number;
   reasoningTokens: number;
+  /** Estimated tokens returned by this step's tools. */
+  toolTokens: number;
   reasoningMs: number;
   firstTokenMs?: number | undefined;
   toolCalls: ToolCall[];
@@ -86,6 +88,12 @@ export type ModelStat = {
   cost: number;
 };
 
+/** Usage of one completed request: its prompt plus the tool estimates inside it. */
+export type RequestUsage = {
+  tokens: TokenUsageInfo;
+  toolTokens: number;
+};
+
 export type SessionMetrics = {
   turns: number;
   steps: number;
@@ -93,6 +101,8 @@ export type SessionMetrics = {
   tokens: TokenUsageInfo;
   /** Estimated tokens returned by tools (content characters ÷ 4). */
   toolTokens: number;
+  /** Usage of the last completed request in the active history. */
+  lastRequest?: RequestUsage | undefined;
   cost: number;
   firstAt?: number | undefined;
   lastAt?: number | undefined;
@@ -226,6 +236,7 @@ export function stepMetrics(message: SessionMessageAssistant): StepMetrics {
   let reasoningMs = 0;
   let firstTokenMs: number | undefined;
   const toolCalls: ToolCall[] = [];
+  let toolTokens = 0;
 
   for (const part of message.content) {
     if (part.type === "reasoning") {
@@ -240,6 +251,7 @@ export function stepMetrics(message: SessionMessageAssistant): StepMetrics {
     }
     if (part.type === "tool") {
       toolCalls.push(toolCallFromPart(part));
+      toolTokens += toolResultTokens(part);
       const delta = Math.max(0, part.time.created - message.time.created);
       firstTokenMs = firstTokenMs === undefined ? delta : Math.min(firstTokenMs, delta);
     }
@@ -252,6 +264,7 @@ export function stepMetrics(message: SessionMessageAssistant): StepMetrics {
     ...(rate !== undefined ? { rate } : {}),
     outputTokens: output,
     reasoningTokens: reasoning,
+    toolTokens,
     reasoningMs,
     ...(firstTokenMs !== undefined ? { firstTokenMs } : {}),
     toolCalls,
@@ -424,9 +437,11 @@ export function analyzeSession(messages: readonly SessionMessageInfo[]): Session
   const tools = new Map<string, ToolStat>();
   const models = new Map<string, ModelStat>();
   let toolTokens = 0;
+  let lastRequest: RequestUsage | undefined;
   for (const step of steps) {
-    for (const part of step.message.content) {
-      if (part.type === "tool") toolTokens += toolResultTokens(part);
+    toolTokens += step.toolTokens;
+    if (step.message.tokens && step.message.time.completed !== undefined) {
+      lastRequest = { tokens: step.message.tokens, toolTokens: step.toolTokens };
     }
     for (const call of step.toolCalls) {
       const stat = tools.get(call.name) ?? {
@@ -478,6 +493,7 @@ export function analyzeSession(messages: readonly SessionMessageInfo[]): Session
     messages: messages.length,
     tokens,
     toolTokens,
+    ...(lastRequest ? { lastRequest } : {}),
     cost,
     ...(firstAt !== undefined ? { firstAt } : {}),
     ...(lastAt !== undefined ? { lastAt } : {}),
