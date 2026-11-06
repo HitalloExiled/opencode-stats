@@ -160,12 +160,10 @@ const CSS = `
 .stats-context-head b.is-warn { color: var(--v2-text-text-warning, #f0b44c); }
 .stats-context-head b.is-danger { color: var(--stats-error); }
 .stats-context-sep { color: var(--v2-text-text-faint, #6e6e6e); }
-.stats-context-bar { height: 5px; border-radius: 999px; background: var(--v2-background-bg-layer-03, #2a2a2a); border: 1px solid var(--v2-border-border-muted, #303030); overflow: hidden; }
-.stats-context-fill { display: block; height: 100%; border-radius: 999px; background: var(--stats-output); transition: width 200ms ease; }
-.stats-context-fill.is-warn { background: var(--v2-text-text-warning, #f0b44c); }
-.stats-context-fill.is-danger { background: var(--stats-error); }
-.stats-context-sources { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--v2-border-border-muted, #2c2c2c); padding-top: 8px; }
-.stats-context-subhead { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+.stats-context-bar { display: flex; height: 6px; border-radius: 999px; background: var(--v2-background-bg-layer-03, #2a2a2a); border: 1px solid var(--v2-border-border-muted, #303030); overflow: hidden; }
+.stats-context-used { display: flex; height: 100%; border-radius: 999px; overflow: hidden; transition: width 200ms ease; }
+.stats-context-seg { height: 100%; min-width: 0; }
+.stats-context-subhead { margin-top: 2px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
 .stats-context-parts { display: flex; flex-direction: column; gap: 1px; max-height: 168px; overflow-y: auto; scrollbar-width: thin; }
 .stats-context-part { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto 34px; gap: 6px; align-items: center; padding: 3px 2px; font-size: 10px; }
 .stats-context-dot { width: 6px; height: 6px; border-radius: 2px; background: var(--stats-input); }
@@ -928,53 +926,53 @@ export function StatsView(props: { session: MountedSession }) {
             </span>
           </div>
 
-          <Show when={tokenView() === "context" && contextLimit() !== undefined}>
+          <Show when={tokenView() === "context" && tokenParts().hasRequest}>
             <div class="stats-context">
               <div class="stats-context-head">
-                <span>{t("stats.contextWindow")}</span>
-                <b>{formatTokens(tokenParts().total, locale)}</b>
-                <span class="stats-context-sep">/</span>
-                <span>{formatTokens(contextLimit() ?? 0, locale)}</span>
-                <span class="stats-spacer" />
-                <b
-                  classList={{
-                    "is-warn": (contextUsage() ?? 0) >= 60 && (contextUsage() ?? 0) < 85,
-                    "is-danger": (contextUsage() ?? 0) >= 85,
-                  }}
+                <Show
+                  when={contextLimit() !== undefined}
+                  fallback={<span>{t("stats.contextComposition")}</span>}
                 >
-                  {formatPercent(contextUsage(), locale, 1)}
-                </b>
+                  <span>{t("stats.contextWindow")}</span>
+                  <b>{formatTokens(tokenParts().total, locale)}</b>
+                  <span class="stats-context-sep">/</span>
+                  <span>{formatTokens(contextLimit() ?? 0, locale)}</span>
+                  <span class="stats-spacer" />
+                  <b
+                    classList={{
+                      "is-warn": (contextUsage() ?? 0) >= 60 && (contextUsage() ?? 0) < 85,
+                      "is-danger": (contextUsage() ?? 0) >= 85,
+                    }}
+                  >
+                    {formatPercent(contextUsage(), locale, 1)}
+                  </b>
+                </Show>
               </div>
               <div
                 class="stats-context-bar"
                 role="img"
-                aria-label={t("stats.contextUsage", formatPercent(contextUsage(), locale, 1))}
+                aria-label={
+                  contextLimit() !== undefined
+                    ? t("stats.contextUsage", formatPercent(contextUsage(), locale, 1))
+                    : t("stats.contextComposition")
+                }
               >
                 <span
-                  class="stats-context-fill"
-                  classList={{
-                    "is-warn": (contextUsage() ?? 0) >= 60 && (contextUsage() ?? 0) < 85,
-                    "is-danger": (contextUsage() ?? 0) >= 85,
+                  class="stats-context-used"
+                  style={{
+                    width: `${contextLimit() !== undefined ? Math.min(100, contextUsage() ?? 0) : 100}%`,
                   }}
-                  style={{ width: `${Math.min(100, contextUsage() ?? 0)}%` }}
-                />
-              </div>
-            </div>
-          </Show>
-
-          <Show when={tokenView() === "context" && tokenParts().hasRequest}>
-            <div class="stats-context-sources">
-              <div class="stats-context-subhead">{t("stats.contextComposition")}</div>
-              <div class="stats-token-bar" role="img" aria-label={t("stats.contextComposition")}>
-                <For each={contextSources().entries}>
-                  {(entry) => (
-                    <span
-                      class="stats-token-seg"
-                      title={`${t(entry.labelKey)}: ${formatTokens(entry.value, locale)} · ${formatPercent(entry.share, locale)}`}
-                      style={{ width: `${entry.share}%`, background: entry.color }}
-                    />
-                  )}
-                </For>
+                >
+                  <For each={contextSources().entries}>
+                    {(entry) => (
+                      <span
+                        class="stats-context-seg"
+                        title={`${t(entry.labelKey)}: ${formatTokens(entry.value, locale)} · ${formatPercent(entry.share, locale)}`}
+                        style={{ width: `${entry.share}%`, background: entry.color }}
+                      />
+                    )}
+                  </For>
+                </span>
               </div>
               <div class="stats-legend">
                 <For each={contextSources().entries}>

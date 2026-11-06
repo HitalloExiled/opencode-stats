@@ -167,11 +167,12 @@ mas não limpa o store; apenas desligar a observabilidade limpa.
   caracteres do conteúdo retornado pelas tools (÷ 4), descontada do input para
   não contar os mesmos tokens duas vezes. O provider não reporta tokens de
   ferramenta separadamente. Na visão **Contexto**, o total é o prompt do último
-  request concluído (`input + cache`), sem output/reasoning. Quando o modelo é
-  conhecido, a visão mostra também o uso da janela (prompt ÷ `limit.context`),
-  com barra de percentual. A composição do conteúdo separa o system prompt
-  (estimado pelos bytes da captura ÷ 4), os resultados de tools e o restante
-  (conversa + definições de tools), com o system prompt detalhado por parte.
+  request concluído (`input + cache`), sem output/reasoning. A barra da janela
+  é empilhada por conteúdo: system prompt (estimado pelos bytes da captura ÷ 4),
+  resultados de tools e o restante (conversa + definições de tools). Quando o
+  modelo é conhecido, a barra mostra o uso (prompt ÷ `limit.context`) e só a
+  parte preenchida é dividida nesses segmentos; sem o limite, ela mostra apenas
+  a composição. O system prompt é detalhado por parte logo abaixo.
 - A leitura do interruptor no `ctx.storage` é assíncrona. Um request que chegue
   antes da hidratação pode ser capturado mesmo com o estado persistido em
   `false`; ao ler `false`, o plugin limpa as capturas e a fila.
