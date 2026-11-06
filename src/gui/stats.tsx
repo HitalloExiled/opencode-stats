@@ -74,7 +74,14 @@ const CSS = `
 .stats-icon-btn { appearance: none; border: 1px solid transparent; background: transparent; color: var(--v2-text-text-faint, #6e6e6e); width: 25px; height: 25px; border-radius: 6px; display: grid; place-items: center; cursor: pointer; }
 .stats-icon-btn:hover { background: var(--v2-overlay-simple-overlay-hover, #262626); color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-muted, #2c2c2c); }
 .stats-icon-btn:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
-.stats-icon-btn.is-on { color: var(--stats-output); }
+.stats-toggle { display: inline-flex; align-items: center; gap: 5px; height: 25px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); color: var(--v2-text-text-muted, #9b9b9b); font: inherit; font-size: 10.5px; font-weight: 650; line-height: 1; cursor: pointer; transition: border-color 150ms, background 150ms, color 150ms; }
+.stats-toggle:hover { color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-strong, #3a3a3a); background: var(--v2-overlay-simple-overlay-hover, #262626); }
+.stats-toggle:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
+.stats-toggle:disabled { opacity: 0.55; cursor: default; }
+.stats-toggle.is-on { color: var(--stats-error); border-color: color-mix(in srgb, var(--stats-error) 38%, transparent); background: color-mix(in srgb, var(--stats-error) 10%, transparent); }
+.stats-toggle.is-on:hover { background: color-mix(in srgb, var(--stats-error) 17%, transparent); }
+.stats-toggle.is-off { color: var(--stats-ok); border-color: color-mix(in srgb, var(--stats-ok) 38%, transparent); background: color-mix(in srgb, var(--stats-ok) 10%, transparent); }
+.stats-toggle.is-off:hover { background: color-mix(in srgb, var(--stats-ok) 17%, transparent); }
 .stats-card { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 10px; padding: 11px; display: flex; flex-direction: column; gap: 9px; }
 .stats-card-head { display: flex; align-items: center; gap: 7px; min-height: 18px; }
 .stats-card-head h3 { margin: 0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--v2-text-text-faint, #6e6e6e); }
@@ -146,15 +153,16 @@ const CSS = `
 @keyframes stats-spin { to { transform: rotate(360deg); } }
 .stats-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 44px 16px; text-align: center; color: var(--v2-text-text-muted, #9b9b9b); }
 .stats-empty svg { opacity: 0.5; }
+.stats-empty .stats-action svg { opacity: 1; }
 .stats-empty-title { font-weight: 600; font-size: 12.5px; }
 .stats-empty-hint { color: var(--v2-text-text-faint, #6e6e6e); font-size: 11px; max-width: 260px; }
-.stats-action { appearance: none; margin-top: 5px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); color: var(--v2-text-text-base, #e8e8e8); border-radius: 7px; padding: 5px 11px; font: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.stats-action { appearance: none; margin-top: 5px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); color: var(--v2-text-text-base, #e8e8e8); border-radius: 7px; padding: 5px 11px; font: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
 .stats-action:hover { border-color: var(--v2-border-border-strong, #3a3a3a); background: var(--v2-overlay-simple-overlay-hover, #262626); }
 .stats-action:disabled { opacity: 0.55; cursor: default; }
 .stats-action:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
 `;
 
-const Icon = (props: { path: string; size?: number }) => (
+const Icon = (props: { path: string; size?: number; fill?: string }) => (
   <svg
     width={props.size ?? 13}
     height={props.size ?? 13}
@@ -163,8 +171,8 @@ const Icon = (props: { path: string; size?: number }) => (
   >
     <path
       d={props.path}
-      fill="none"
-      stroke="currentColor"
+      fill={props.fill ?? "none"}
+      stroke={props.fill ? "none" : "currentColor"}
       stroke-width="1.3"
       stroke-linecap="round"
       stroke-linejoin="round"
@@ -179,10 +187,8 @@ const TOOL =
   "M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1l-4 4a1.4 1.4 0 0 0 2 2l4-4a3.2 3.2 0 0 0 4.1-3.9l-1.8 1.8-1.9-.2-.2-1.9 1.7-1.9Z";
 const INFO = "M8 2.3A5.7 5.7 0 1 0 8 13.7 5.7 5.7 0 0 0 8 2.3Zm0 4.4v3.1M8 5.2v.1";
 const CHART = "M2 13V9m4 4V5m4 8V2m4 11V7";
-const EYE =
-  "M1.6 8s2.3-4.1 6.4-4.1S14.4 8 14.4 8s-2.3 4.1-6.4 4.1S1.6 8 1.6 8Zm6.4 1.7A1.7 1.7 0 1 0 8 6.3";
-const EYE_OFF =
-  "M2.2 2.2l11.6 11.6M6.2 6.2A1.8 1.8 0 0 0 8 9.8c.5 0 .9-.2 1.2-.5M4.1 4.6C2.4 5.7 1.6 8 1.6 8s2.3 4.1 6.4 4.1c1 0 1.8-.2 2.5-.5M12 10.3c1.4-1 2.4-2.3 2.4-2.3S12.1 3.9 8 3.9c-.4 0-.7 0-1.1.1";
+const PLAY = "M4.8 2.7 13 8l-8.2 5.3V2.7Z";
+const STOP = "M4.5 4.5h7v7h-7z";
 
 export function StatsView(props: { session: MountedSession }) {
   const t = useT();
@@ -413,8 +419,8 @@ export function StatsView(props: { session: MountedSession }) {
           {t("stats.activeContext")}
         </span>
         <button
-          class="stats-icon-btn"
-          classList={{ "is-on": enabled() }}
+          class="stats-toggle"
+          classList={{ "is-on": enabled(), "is-off": !enabled() }}
           type="button"
           title={enabled() ? t("observability.disable") : t("observability.enable")}
           aria-label={enabled() ? t("observability.disable") : t("observability.enable")}
@@ -422,7 +428,8 @@ export function StatsView(props: { session: MountedSession }) {
           disabled={observability.busy()}
           onClick={() => void toggle(!enabled())}
         >
-          <Icon path={enabled() ? EYE : EYE_OFF} size={14} />
+          <Icon path={enabled() ? STOP : PLAY} size={11} fill="currentColor" />
+          {enabled() ? t("observability.stop") : t("observability.start")}
         </button>
         <Show when={enabled()}>
           <button
@@ -439,7 +446,7 @@ export function StatsView(props: { session: MountedSession }) {
 
       <Show when={!enabled()}>
         <div class="stats-empty">
-          <Icon path={EYE_OFF} size={22} />
+          <Icon path={STOP} size={22} fill="currentColor" />
           <span class="stats-empty-title">{t("stats.disabled")}</span>
           <span class="stats-empty-hint">{t("stats.disabledHint")}</span>
           <button
@@ -448,7 +455,8 @@ export function StatsView(props: { session: MountedSession }) {
             disabled={observability.busy()}
             onClick={() => void toggle(true)}
           >
-            {t("observability.enable")}
+            <Icon path={PLAY} size={11} fill="currentColor" />
+            {t("observability.start")}
           </button>
         </div>
       </Show>

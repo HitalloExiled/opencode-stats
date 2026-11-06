@@ -71,6 +71,8 @@ const EN: Table = {
 
   "observability.enable": "Enable observability",
   "observability.disable": "Disable observability",
+  "observability.start": "Start",
+  "observability.stop": "Stop",
   "stats.disabled": "Observability is off",
   "stats.disabledHint": "Metrics and prompt capture are paused. Enable it to start measuring again.",
 
@@ -207,6 +209,8 @@ const PT: Table = {
 
   "observability.enable": "Ativar observabilidade",
   "observability.disable": "Desativar observabilidade",
+  "observability.start": "Iniciar",
+  "observability.stop": "Parar",
   "stats.disabled": "Observabilidade desativada",
   "stats.disabledHint": "As métricas e a captura do prompt estão pausadas. Ative para voltar a medir.",
 

@@ -15,11 +15,12 @@ Duas abas no painel lateral:
 Além disso, uma faixa compacta no cabeçalho da sessão mostra o tok/s atual, a
 duração, o reasoning e a quantidade de tool calls do último turno.
 
-Um botão de olho na aba Estatísticas **liga e desliga a observabilidade** de
-todo o processo: com ela desligada, a captura do prompt e a amostragem de tok/s
-param, a faixa do cabeçalho some e as duas abas mostram um estado desativado com
-a ação de reativar. O estado fica no `ctx.storage` do servidor (chave
-`observability`), então sobrevive a reinícios e hot reloads.
+Um botão **Parar/Iniciar** (ícone play/stop) na aba Estatísticas **liga e
+desliga a observabilidade** de todo o processo: com ela desligada, a captura do
+prompt e a amostragem de tok/s param, a faixa do cabeçalho some e as duas abas
+mostram um estado desativado com a ação de reativar. O estado fica no
+`ctx.storage` do servidor (chave `observability`), então sobrevive a reinícios e
+hot reloads.
 
 O plugin é autocontido: só usa `@opencode/plugin`, `effect` e `solid-js`, e não
 grava nada no repositório. O prompt capturado fica **em memória** no processo do
