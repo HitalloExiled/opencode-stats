@@ -78,6 +78,10 @@ test/                    # bun:test das funções puras
   enquanto uma rota antiga ainda pode servir a janela, e o hook pode pertencer a
   qualquer geração. O teardown **não** limpa o runtime; só o usuário desliga.
   Mantenha essa propriedade se refatorar o ciclo de vida.
+- O runtime tem `RUNTIME_VERSION`: **incremente** ao mudar o formato do store,
+  scheduler ou observability. Sem o bump, o hot reload mantém o objeto antigo e
+  a RPC nova chama métodos que ele não tem (ex.: `peek`). O runtime anterior é
+  descartado e tem store/fila limpos ao trocar de versão.
 - A RPC `opencode.stats/systemPrompt` recebe `{ sessionID, ifNoneMatch? }` e
   devolve `{ status: "missing" }`, `{ status: "unchanged", hash, capturedAt,
   requestCount }` ou `{ status: "capture", capture }`. `observability` devolve o

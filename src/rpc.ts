@@ -36,7 +36,12 @@ function status(runtime: StatsRuntime): ObservabilityStatus {
 export function createRpcHandlers(runtime: StatsRuntime): RpcHandlers<typeof StatsRpc> {
   return {
     systemPrompt: async (input): Promise<PromptResult> => {
-      const capture = runtime.store.peek(String(input.sessionID));
+      const sessionID = String(input.sessionID);
+      // A runtime created before `peek` existed can still serve a hot-reloaded
+      // window for a moment; fall back instead of failing the RPC.
+      const store = runtime.store;
+      const capture =
+        typeof store.peek === "function" ? store.peek(sessionID) : store.get(sessionID);
       if (!capture) return { status: "missing" };
       if (input.ifNoneMatch && input.ifNoneMatch === capture.hash) {
         return {

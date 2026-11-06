@@ -20,6 +20,8 @@ import {
 import { createCaptureScheduler, type CaptureScheduler } from "./scheduler.js";
 
 export type StatsRuntime = {
+  /** Bump when the store/scheduler/observability shape changes. */
+  readonly version: number;
   readonly store: CaptureStore;
   readonly scheduler: CaptureScheduler;
   readonly observability: Observability;
@@ -28,6 +30,12 @@ export type StatsRuntime = {
 };
 
 const KEY = "__opencodeStatsRuntime__" as const;
+/**
+ * The runtime survives hot reloads, so a plugin update that changes the store
+ * shape must replace the instance: otherwise new handlers call methods the old
+ * store never had (e.g. `peek`). Bump this whenever that contract changes.
+ */
+const RUNTIME_VERSION = 2;
 
 type Globals = typeof globalThis & {
   __opencodeStatsRuntime__?: StatsRuntime;
@@ -36,7 +44,13 @@ type Globals = typeof globalThis & {
 export function statsRuntime(): StatsRuntime {
   const globals = globalThis as Globals;
   const existing = globals[KEY];
-  if (existing) return existing;
+  if (existing?.version === RUNTIME_VERSION) return existing;
+  // Drop the previous generation's work; any in-flight request recaptures with
+  // the new hook, and the old hook is disposed by its own teardown.
+  if (existing) {
+    existing.scheduler.clear();
+    existing.store.clear();
+  }
 
   const store = createCaptureStore();
   const scheduler = createCaptureScheduler({ store });
@@ -48,6 +62,7 @@ export function statsRuntime(): StatsRuntime {
   });
 
   const runtime: StatsRuntime = {
+    version: RUNTIME_VERSION,
     store,
     scheduler,
     observability,
