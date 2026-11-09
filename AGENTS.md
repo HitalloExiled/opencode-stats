@@ -117,6 +117,9 @@ classificado; documente isso se for adicionar um fallback.
   sessão. O setup também registra o comando **Ativar/Desativar observabilidade**
   (título reativo pelo signal); a entrada de menu correspondente foi removida —
   o toggle fica no cabeçalho da aba Estatísticas e na paleta de comandos.
+- `src/gui/prompt.tsx` renderiza cada parte com `ctx.ui.Markdown` (componente do
+  host, sem dependência no bundle). O toggle **Markdown | Bruto** mantém o
+  `<pre>` original para inspeção; copiar/salvar e o filtro operam no texto bruto.
 - `usePlugin()` só funciona dentro de contributions. **Não use `useT()` no
   setup**; leia `ctx.locale.locale()` diretamente (o setup não está sob o
   provider).

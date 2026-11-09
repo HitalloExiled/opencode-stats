@@ -88,6 +88,10 @@ ferramenta e as pausas de raciocínio ficam fora da conta.
   `<plans-context>`, `<plans-plugin>` e regras de roteamento).
 - Filtro por grupo, busca, visão por fonte ou texto completo, cópia por parte e
   "copiar tudo"/"salvar .md".
+- As partes e o texto completo são renderizados como **Markdown** pelo
+  componente nativo do host (`ctx.ui.Markdown`), com toggle **Markdown | Bruto**.
+  O modo bruto mantém o texto exato e a prévia de 4.000 caracteres; copiar,
+  copiar tudo, salvar `.md` e o filtro usam sempre o texto original.
 - O cabeçalho mostra agente, modelo, tamanho total, número de partes, horário da
   captura e contador de requests.
 - Antes do primeiro request da sessão a aba mostra um estado vazio explicando

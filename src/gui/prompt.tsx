@@ -43,6 +43,7 @@ const CSS = `
 .prompt-summary-meta b { color: var(--v2-text-text-muted, #9b9b9b); font-weight: 600; }
 .prompt-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .prompt-seg { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 7px; }
+.prompt-render { margin-left: auto; }
 .prompt-seg button { appearance: none; border: 0; background: transparent; color: var(--v2-text-text-muted, #9b9b9b); font: inherit; font-size: 10px; padding: 3px 8px; border-radius: 5px; cursor: pointer; }
 .prompt-seg button:hover { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-hover, #262626); }
 .prompt-seg button.is-active { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-pressed, #303030); font-weight: 650; }
@@ -75,6 +76,10 @@ const CSS = `
 .prompt-part-body { border-top: 1px solid var(--v2-border-border-muted, #2c2c2c); padding: 8px; background: var(--v2-background-bg-layer-01, #171717); }
 .prompt-pre { margin: 0; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: var(--v2-text-text-muted, #b0b0b0); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 10.5px; line-height: 1.5; }
 .prompt-pre.is-full { max-height: 520px; }
+.prompt-md { max-height: 280px; overflow: auto; color: var(--v2-text-text-muted, #b0b0b0); font-size: 11.5px; line-height: 1.55; overflow-wrap: anywhere; scrollbar-width: thin; }
+.prompt-md.is-full { max-height: 520px; }
+.prompt-md pre { overflow-x: auto; }
+.prompt-full-md { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-01, #171717); border-radius: 8px; padding: 9px; }
 .prompt-more { margin-top: 6px; appearance: none; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: transparent; color: var(--v2-text-text-muted, #9b9b9b); border-radius: 6px; padding: 3px 7px; font: inherit; font-size: 9.5px; cursor: pointer; }
 .prompt-more:hover { color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-strong, #3a3a3a); }
 .prompt-full { display: flex; flex-direction: column; gap: 6px; }
@@ -116,8 +121,13 @@ const PREVIEW_LIMIT = 4000;
 const GROUPS: PromptGroup[] = ["fixed", "added", "dynamic"];
 const FILTERS: Array<PromptGroup | "all"> = ["all", "fixed", "added", "dynamic"];
 
+type PromptRender = "markdown" | "raw";
+// Viewing preference, kept at module scope so it survives the panel remounts.
+const [renderMode, setRenderMode] = createSignal<PromptRender>("markdown");
+
 export function PromptView(props: { session: MountedSession }) {
   const ctx = usePlugin();
+  const Markdown = ctx.ui.Markdown;
   const t = useT();
   const locale = useLocale();
   const session = props.session;
@@ -417,6 +427,22 @@ export function PromptView(props: { session: MountedSession }) {
                 <Icon path={DOWNLOAD} size={11} />
                 {t("prompt.save")}
               </button>
+              <div class="prompt-seg prompt-render" role="group" aria-label={t("prompt.render")}>
+                <button
+                  type="button"
+                  classList={{ "is-active": renderMode() === "markdown" }}
+                  onClick={() => setRenderMode("markdown")}
+                >
+                  {t("prompt.markdown")}
+                </button>
+                <button
+                  type="button"
+                  classList={{ "is-active": renderMode() === "raw" }}
+                  onClick={() => setRenderMode("raw")}
+                >
+                  {t("prompt.raw")}
+                </button>
+              </div>
             </div>
 
             <div class="prompt-controls">
@@ -438,7 +464,14 @@ export function PromptView(props: { session: MountedSession }) {
                     <Icon path={INFO} size={11} />
                     <span>{t("prompt.fullHint")}</span>
                   </div>
-                  <pre class="prompt-full-pre">{fullText()}</pre>
+                  <Show
+                    when={renderMode() === "markdown"}
+                    fallback={<pre class="prompt-full-pre">{fullText()}</pre>}
+                  >
+                    <div class="prompt-full-md">
+                      <Markdown text={fullText()} class="prompt-md is-full" />
+                    </div>
+                  </Show>
                 </div>
               }
             >
@@ -488,17 +521,26 @@ export function PromptView(props: { session: MountedSession }) {
                                   </div>
                                   <Show when={open()}>
                                     <div class="prompt-part-body">
-                                      <pre class="prompt-pre">{body(part)}</pre>
-                                      <Show when={hasMore(part)}>
-                                        <button
-                                          type="button"
-                                          class="prompt-more"
-                                          onClick={() => toggleFull(part)}
-                                        >
-                                          {fullExpanded().has(key)
-                                            ? t("prompt.showLess")
-                                            : t("prompt.showMore")}
-                                        </button>
+                                      <Show
+                                        when={renderMode() === "markdown"}
+                                        fallback={
+                                          <>
+                                            <pre class="prompt-pre">{body(part)}</pre>
+                                            <Show when={hasMore(part)}>
+                                              <button
+                                                type="button"
+                                                class="prompt-more"
+                                                onClick={() => toggleFull(part)}
+                                              >
+                                                {fullExpanded().has(key)
+                                                  ? t("prompt.showLess")
+                                                  : t("prompt.showMore")}
+                                              </button>
+                                            </Show>
+                                          </>
+                                        }
+                                      >
+                                        <Markdown text={part.text} class="prompt-md" />
                                       </Show>
                                     </div>
                                   </Show>
