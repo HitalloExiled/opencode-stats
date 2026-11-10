@@ -3,11 +3,9 @@
  * so an incomplete translation never loses a string.
  */
 
-import { usePlugin } from "@opencode/plugin/gui";
+import { createI18n } from "opencode-shared/gui";
 
-type Table = Record<string, string>;
-
-const EN: Table = {
+const EN = {
   "stats.title": "Statistics",
   "scroll.top": "Scroll to top",
   "scroll.bottom": "Scroll to bottom",
@@ -144,7 +142,7 @@ const EN: Table = {
   "toast.saveFailed": "Could not save",
 };
 
-const PT: Table = {
+const PT: Record<keyof typeof EN, string> = {
   "stats.title": "Estatísticas",
   "scroll.top": "Ir para o topo",
   "scroll.bottom": "Ir para o fim",
@@ -282,20 +280,11 @@ const PT: Table = {
   "toast.saveFailed": "Não foi possível salvar",
 };
 
-export type Translate = (key: string, ...args: Array<string | number>) => string;
+const i18n = createI18n(EN, PT);
 
+export const useT = i18n.useT;
+
+/** The BCP 47-ish tag the stats formatters pass to Intl (kept as a string). */
 export function useLocale(): string {
-  const ctx = usePlugin();
-  return ctx.locale.locale() ?? "en-US";
-}
-
-export function useT(): Translate {
-  const ctx = usePlugin();
-  return (key: string, ...args: Array<string | number>) => {
-    const locale = (ctx.locale.locale() ?? "en").toLowerCase().startsWith("pt") ? PT : EN;
-    const template = locale[key] ?? EN[key] ?? key;
-    return args.length === 0
-      ? template
-      : template.replace(/\{(\d+)\}/g, (_, index: string) => String(args[Number(index)] ?? ""));
-  };
+  return i18n.useLocale()();
 }
