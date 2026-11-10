@@ -37,7 +37,6 @@ export function setup(ctx: SetupContext<never>): void {
     id: statsTabID,
     title: text("Estatísticas", "Statistics"),
     closable: "compact",
-    fallback: true,
   }));
 
   const promptTab = createMemo<PanelTab>(() => ({

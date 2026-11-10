@@ -17,8 +17,9 @@ import {
   onMount,
   Show,
 } from "solid-js";
-import { usePlugin } from "@opencode/plugin/gui";
+import { usePanel, usePlugin } from "@opencode/plugin/gui";
 import type { MountedSession } from "@opencode/plugin/gui";
+import { SHARED_CSS, ScrollNav, createScrollNav } from "@hitalloexiled/opencode-shared/gui";
 
 import { formatBytes, formatClock } from "../format";
 import { StatsRpc, type PromptCapture, type PromptGroup, type PromptPart } from "./contract";
@@ -26,16 +27,13 @@ import { useLocale, useT } from "./i18n";
 import { useObservability } from "./observability";
 
 const CSS = `
-.prompt { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; overflow-y: auto; padding: 12px; color: var(--v2-text-text-base, #e8e8e8); font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-size: 12.5px; scrollbar-width: thin; scrollbar-color: var(--v2-border-border-strong, #3a3a3a) transparent; }
-.prompt::-webkit-scrollbar { width: 10px; }
-.prompt::-webkit-scrollbar-thumb { background: var(--v2-border-border-strong, #303030); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
+.prompt { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; overflow: hidden; padding: 12px; color: var(--v2-text-text-base, #e8e8e8); font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-size: 12.5px; }
+.prompt-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.prompt-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
 .prompt-head { display: flex; align-items: center; gap: 8px; padding: 1px 2px 0; }
 .prompt-title { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: 0.1px; }
 .prompt-scope { color: var(--v2-text-text-faint, #6e6e6e); font-size: 10.5px; margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
-.prompt-icon-btn { appearance: none; border: 1px solid transparent; background: transparent; color: var(--v2-text-text-faint, #6e6e6e); width: 25px; height: 25px; border-radius: 6px; display: grid; place-items: center; cursor: pointer; }
-.prompt-icon-btn:hover { background: var(--v2-overlay-simple-overlay-hover, #262626); color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-muted, #2c2c2c); }
-.prompt-icon-btn:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
-.prompt-summary { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 10px; padding: 9px 10px; display: flex; flex-direction: column; gap: 4px; }
+.prompt-summary { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 8px; padding: 9px 10px; display: flex; flex-direction: column; gap: 4px; }
 .prompt-summary-top { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
 .prompt-summary-agent { color: var(--v2-text-text-muted, #9b9b9b); font-size: 11.5px; font-weight: 650; }
 .prompt-summary-model { color: var(--v2-text-text-faint, #6e6e6e); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 9.5px; }
@@ -53,7 +51,7 @@ const CSS = `
 .prompt-action { appearance: none; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); color: var(--v2-text-text-muted, #9b9b9b); border-radius: 7px; padding: 4px 9px; font: inherit; font-size: 10px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
 .prompt-action:hover { color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-strong, #3a3a3a); background: var(--v2-overlay-simple-overlay-hover, #262626); }
 .prompt-action:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
-.prompt-action.is-ok { color: var(--v2-text-text-success, #5fce7d); border-color: color-mix(in srgb, var(--v2-text-text-success, #5fce7d) 30%, transparent); }
+.prompt-action.is-ok { color: var(--v2-state-fg-success); border-color: color-mix(in srgb, var(--v2-state-fg-success) 30%, transparent); }
 .prompt-groups { display: flex; flex-direction: column; gap: 10px; }
 .prompt-group { display: flex; flex-direction: column; gap: 4px; }
 .prompt-group-head { display: flex; align-items: center; gap: 7px; padding: 0 2px; }
@@ -72,7 +70,7 @@ const CSS = `
 .prompt-bytes { flex: none; margin-left: auto; color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; font-variant-numeric: tabular-nums; }
 .prompt-copy { flex: none; appearance: none; border: 1px solid transparent; background: transparent; color: var(--v2-text-text-faint, #6e6e6e); width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; cursor: pointer; }
 .prompt-copy:hover { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-hover, #262626); border-color: var(--v2-border-border-muted, #2c2c2c); }
-.prompt-copy.is-ok { color: var(--v2-text-text-success, #5fce7d); }
+.prompt-copy.is-ok { color: var(--v2-state-fg-success); }
 .prompt-part-body { border-top: 1px solid var(--v2-border-border-muted, #2c2c2c); padding: 8px; background: var(--v2-background-bg-layer-01, #171717); }
 .prompt-pre { margin: 0; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: var(--v2-text-text-muted, #b0b0b0); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 10.5px; line-height: 1.5; }
 .prompt-pre.is-full { max-height: 520px; }
@@ -86,7 +84,7 @@ const CSS = `
 .prompt-full-head { display: flex; align-items: center; gap: 7px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 10px; }
 .prompt-full-pre { margin: 0; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-01, #171717); border-radius: 8px; padding: 9px; max-height: 560px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: var(--v2-text-text-muted, #b0b0b0); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 10.5px; line-height: 1.5; }
 .prompt-banner { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 8px; padding: 7px 9px; color: var(--v2-text-text-muted, #9b9b9b); font-size: 10.5px; display: flex; align-items: center; gap: 7px; }
-.prompt-banner.is-error { color: var(--v2-text-text-danger, #ef6b6b); border-color: color-mix(in srgb, var(--v2-text-text-danger, #ef6b6b) 30%, transparent); background: color-mix(in srgb, var(--v2-text-text-danger, #ef6b6b) 8%, transparent); }
+.prompt-banner.is-error { color: var(--v2-state-fg-danger); border-color: color-mix(in srgb, var(--v2-state-fg-danger) 30%, transparent); background: color-mix(in srgb, var(--v2-state-fg-danger) 8%, transparent); }
 .prompt-spinner { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--v2-border-border-strong, #3a3a3a); border-top-color: var(--v2-icon-icon-accent, #4dc8b8); animation: prompt-spin 0.8s linear infinite; }
 @keyframes prompt-spin { to { transform: rotate(360deg); } }
 .prompt-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 44px 16px; text-align: center; color: var(--v2-text-text-muted, #9b9b9b); }
@@ -97,7 +95,6 @@ const CSS = `
 .prompt-privacy { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; display: flex; align-items: center; gap: 6px; padding: 0 2px; }
 `;
 
-const REFRESH = "M13.2 8a5.2 5.2 0 1 1-1.5-3.7M13.2 2.6v3.2H10";
 const COPY = "M5.5 5.5V3.2c0-.5.4-.9.9-.9h6.4c.5 0 .9.4.9.9v6.4c0 .5-.4.9-.9.9h-2.3M3.2 5.5h6.4c.5 0 .9.4.9.9v6.4c0 .5-.4.9-.9.9H3.2a.9.9 0 0 1-.9-.9V6.4c0-.5.4-.9.9-.9Z";
 const CHECK = "m3.4 8.4 3 3 6.2-6.6";
 const INFO = "M8 2.3A5.7 5.7 0 1 0 8 13.7 5.7 5.7 0 0 0 8 2.3Zm0 4.4v3.1M8 5.2v.1";
@@ -127,11 +124,18 @@ const [renderMode, setRenderMode] = createSignal<PromptRender>("markdown");
 
 export function PromptView(props: { session: MountedSession }) {
   const ctx = usePlugin();
+  const panel = usePanel();
   const Markdown = ctx.ui.Markdown;
   const t = useT();
   const locale = useLocale();
   const session = props.session;
   const data = session.server.data;
+  const nav = createScrollNav({
+    hasMore: () => false,
+    loadingMore: () => false,
+    loadMore: () => {},
+    visible: () => panel.visible(),
+  });
   const observability = useObservability(session);
   const enabled = observability.enabled;
 
@@ -300,6 +304,7 @@ export function PromptView(props: { session: MountedSession }) {
   return (
     <div class="prompt">
       <style>{CSS}</style>
+      <style>{SHARED_CSS}</style>
 
       <div class="prompt-head">
         <h2 class="prompt-title">{t("prompt.title")}</h2>
@@ -308,17 +313,27 @@ export function PromptView(props: { session: MountedSession }) {
           {t("prompt.scope")}
         </span>
         <Show when={enabled()}>
-          <button
-            class="prompt-icon-btn"
-            type="button"
-            title={t("prompt.refresh")}
-            aria-label={t("prompt.refresh")}
-            onClick={() => void load()}
-          >
-            <Icon path={REFRESH} size={14} />
-          </button>
+          <ctx.ui.Tooltip value={t("prompt.refresh")}>
+            <ctx.ui.IconButton
+              icon="refresh"
+              label={t("prompt.refresh")}
+              variant="ghost-muted"
+              size="small"
+              onClick={() => void load()}
+            />
+          </ctx.ui.Tooltip>
         </Show>
       </div>
+
+      <div class="prompt-body">
+        <div
+          class="prompt-scroll os-scroll"
+          ref={nav.ref}
+          onKeyDown={nav.onKeyDown}
+          tabIndex={nav.scrollable() ? 0 : undefined}
+          role="region"
+          aria-label={t("prompt.title")}
+        >
 
       <Show when={!enabled()}>
         <div class="prompt-empty">
@@ -564,6 +579,9 @@ export function PromptView(props: { session: MountedSession }) {
         <span>{t("prompt.privacy")}</span>
       </div>
       </Show>
+        </div>
+        <ScrollNav nav={nav} topLabel={t("scroll.top")} bottomLabel={t("scroll.bottom")} />
+      </div>
     </div>
   );
 }

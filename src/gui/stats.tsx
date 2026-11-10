@@ -18,7 +18,9 @@ import {
   Show,
 } from "solid-js";
 import type { MountedSession } from "@opencode/plugin/gui";
+import { usePanel, usePlugin } from "@opencode/plugin/gui";
 import type { SessionMessageInfo } from "@opencode/client";
+import { SHARED_CSS, ScrollNav, createScrollNav } from "@hitalloexiled/opencode-shared/gui";
 
 import { formatDuration, formatPercent, formatRate, formatTokens } from "../format";
 import {
@@ -52,40 +54,27 @@ const CSS = `
   --stats-output: var(--v2-icon-icon-accent, #4dc8b8);
   --stats-reason: #b49cff;
   --stats-cache: #7c7c7c;
-  --stats-tools: var(--v2-text-text-warning, #f0b44c);
-  --stats-ok: var(--v2-text-text-success, #5fce7d);
-  --stats-error: var(--v2-text-text-danger, #ef6b6b);
-  --stats-run: var(--v2-text-text-info, #7db8ff);
+  --stats-tools: var(--v2-state-fg-warning);
+  --stats-ok: var(--v2-state-fg-success);
+  --stats-error: var(--v2-state-fg-danger);
+  --stats-run: var(--v2-state-fg-info);
   display: flex;
   flex-direction: column;
   gap: 10px;
   height: 100%;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 12px;
   color: var(--v2-text-text-base, #e8e8e8);
   font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   font-size: 12.5px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--v2-border-border-strong, #3a3a3a) transparent;
 }
-.stats::-webkit-scrollbar { width: 10px; }
-.stats::-webkit-scrollbar-thumb { background: var(--v2-border-border-strong, #303030); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
+.stats-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.stats-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
 .stats-head { display: flex; align-items: center; gap: 8px; padding: 1px 2px 0; }
 .stats-title { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: 0.1px; }
 .stats-scope { color: var(--v2-text-text-faint, #6e6e6e); font-size: 10.5px; margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
-.stats-icon-btn { appearance: none; border: 1px solid transparent; background: transparent; color: var(--v2-text-text-faint, #6e6e6e); width: 25px; height: 25px; border-radius: 6px; display: grid; place-items: center; cursor: pointer; }
-.stats-icon-btn:hover { background: var(--v2-overlay-simple-overlay-hover, #262626); color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-muted, #2c2c2c); }
-.stats-icon-btn:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
-.stats-toggle { display: inline-flex; align-items: center; gap: 5px; height: 25px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); color: var(--v2-text-text-muted, #9b9b9b); font: inherit; font-size: 10.5px; font-weight: 650; line-height: 1; cursor: pointer; transition: border-color 150ms, background 150ms, color 150ms; }
-.stats-toggle:hover { color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-strong, #3a3a3a); background: var(--v2-overlay-simple-overlay-hover, #262626); }
-.stats-toggle:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
-.stats-toggle:disabled { opacity: 0.55; cursor: default; }
-.stats-toggle.is-on { color: var(--stats-error); border-color: color-mix(in srgb, var(--stats-error) 38%, transparent); background: color-mix(in srgb, var(--stats-error) 10%, transparent); }
-.stats-toggle.is-on:hover { background: color-mix(in srgb, var(--stats-error) 17%, transparent); }
-.stats-toggle.is-off { color: var(--stats-ok); border-color: color-mix(in srgb, var(--stats-ok) 38%, transparent); background: color-mix(in srgb, var(--stats-ok) 10%, transparent); }
-.stats-toggle.is-off:hover { background: color-mix(in srgb, var(--stats-ok) 17%, transparent); }
-.stats-card { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 10px; padding: 11px; display: flex; flex-direction: column; gap: 9px; }
+.stats-card { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 8px; padding: 11px; display: flex; flex-direction: column; gap: 9px; }
 .stats-card-head { display: flex; align-items: center; gap: 7px; min-height: 18px; }
 .stats-card-head h3 { margin: 0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--v2-text-text-faint, #6e6e6e); }
 .stats-spacer { flex: 1; }
@@ -93,6 +82,9 @@ const CSS = `
 .stats-pill.is-live { color: var(--stats-run); background: color-mix(in srgb, var(--stats-run) 10%, transparent); border-color: color-mix(in srgb, var(--stats-run) 22%, transparent); }
 .stats-pill-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--stats-run); animation: stats-pulse 1.4s ease-in-out infinite; }
 @keyframes stats-pulse { 0%, 100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .stats-pill-dot, .stats-status.is-running, .stats-spinner { animation: none; }
+}
 .stats-hero { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .stats-gauge-wrap { flex: 0 0 146px; max-width: 146px; min-width: 0; }
 .stats-hero-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
@@ -111,7 +103,7 @@ const CSS = `
 .stats-metric-row .stats-metric-value { font-size: 9.5px; }
 .stats-metric-lead { width: 23px; height: 23px; border-radius: 7px; display: grid; place-items: center; flex: none; }
 .stats-metric-lead.is-reason { background: color-mix(in srgb, var(--stats-reason) 12%, transparent); color: var(--stats-reason); }
-.stats-metric-lead.is-tool { background: color-mix(in srgb, var(--v2-text-text-warning, #f0b44c) 12%, transparent); color: var(--v2-text-text-warning, #f0b44c); }
+.stats-metric-lead.is-tool { background: color-mix(in srgb, var(--v2-state-fg-warning) 12%, transparent); color: var(--v2-state-fg-warning); }
 .stats-metric-text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .stats-metric-key { color: var(--v2-text-text-muted, #9b9b9b); font-size: 10.5px; font-weight: 600; }
 .stats-metric-value { color: var(--v2-text-text-faint, #6e6e6e); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -152,7 +144,7 @@ const CSS = `
 .stats-table-row { display: grid; grid-template-columns: minmax(0, 1fr) 50px auto; gap: 9px; align-items: center; padding: 3px 2px; font-size: 10.5px; }
 .stats-table-name { color: var(--v2-text-text-muted, #9b9b9b); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stats-bar-mini { width: 50px; height: 4px; border-radius: 999px; background: var(--v2-background-bg-layer-03, #2a2a2a); overflow: hidden; }
-.stats-bar-mini span { display: block; height: 100%; border-radius: 999px; background: var(--v2-text-text-warning, #f0b44c); }
+.stats-bar-mini span { display: block; height: 100%; border-radius: 999px; background: var(--v2-state-fg-warning); }
 .stats-table-count { color: var(--v2-text-text-faint, #6e6e6e); font-variant-numeric: tabular-nums; font-size: 10px; text-align: right; min-width: 22px; }
 .stats-table-count b { color: var(--v2-text-text-muted, #9b9b9b); font-weight: 600; }
 .stats-models { display: flex; flex-direction: column; gap: 5px; }
@@ -164,13 +156,13 @@ const CSS = `
 .stats-context-head { display: flex; align-items: baseline; gap: 5px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; }
 .stats-context-title { font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
 .stats-context-head b { color: var(--v2-text-text-base, #e8e8e8); font-weight: 650; font-variant-numeric: tabular-nums; }
-.stats-context-head b.is-warn { color: var(--v2-text-text-warning, #f0b44c); }
+.stats-context-head b.is-warn { color: var(--v2-state-fg-warning); }
 .stats-context-head b.is-danger { color: var(--stats-error); }
 .stats-context-sep { color: var(--v2-text-text-faint, #6e6e6e); }
 .stats-context-bar { position: relative; display: flex; height: 6px; border-radius: 999px; background: var(--v2-background-bg-layer-03, #2a2a2a); border: 1px solid var(--v2-border-border-muted, #303030); overflow: hidden; }
-.stats-context-marker { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--v2-text-text-warning, #f0b44c); box-shadow: 0 0 0 1px color-mix(in srgb, var(--v2-background-bg-layer-02, #1a1a1a) 70%, transparent); z-index: 1; }
+.stats-context-marker { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--v2-state-fg-warning); box-shadow: 0 0 0 1px color-mix(in srgb, var(--v2-background-bg-layer-02, #1a1a1a) 70%, transparent); z-index: 1; }
 .stats-context-scale { position: relative; height: 10px; margin-top: 1px; }
-.stats-context-marker-label { position: absolute; top: 0; transform: translateX(-50%); color: var(--v2-text-text-warning, #f0b44c); font-size: 8px; font-weight: 650; letter-spacing: 0.3px; text-transform: uppercase; white-space: nowrap; }
+.stats-context-marker-label { position: absolute; top: 0; transform: translateX(-50%); color: var(--v2-state-fg-warning); font-size: 8px; font-weight: 650; letter-spacing: 0.3px; text-transform: uppercase; white-space: nowrap; }
 .stats-context-used { display: flex; height: 100%; border-radius: 999px; overflow: hidden; transition: width 200ms ease; }
 .stats-context-seg { height: 100%; min-width: 0; }
 .stats-context-subhead { margin-top: 2px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
@@ -184,13 +176,8 @@ const CSS = `
 @keyframes stats-spin { to { transform: rotate(360deg); } }
 .stats-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 44px 16px; text-align: center; color: var(--v2-text-text-muted, #9b9b9b); }
 .stats-empty svg { opacity: 0.5; }
-.stats-empty .stats-action svg { opacity: 1; }
 .stats-empty-title { font-weight: 600; font-size: 12.5px; }
 .stats-empty-hint { color: var(--v2-text-text-faint, #6e6e6e); font-size: 11px; max-width: 260px; }
-.stats-action { appearance: none; margin-top: 5px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); color: var(--v2-text-text-base, #e8e8e8); border-radius: 7px; padding: 5px 11px; font: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-.stats-action:hover { border-color: var(--v2-border-border-strong, #3a3a3a); background: var(--v2-overlay-simple-overlay-hover, #262626); }
-.stats-action:disabled { opacity: 0.55; cursor: default; }
-.stats-action:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
 `;
 
 const Icon = (props: { path: string; size?: number; fill?: string }) => (
@@ -211,14 +198,12 @@ const Icon = (props: { path: string; size?: number; fill?: string }) => (
   </svg>
 );
 
-const REFRESH = "M13.2 8a5.2 5.2 0 1 1-1.5-3.7M13.2 2.6v3.2H10";
 const BRAIN =
   "M6.2 2.4a2 2 0 0 0-2 2 1.9 1.9 0 0 0-1.3 2.9 2 2 0 0 0 .4 2.7 2 2 0 0 0 1.9 2.2c.3.8 1 1.4 1.9 1.4.5 0 .9-.2 1.2-.5V3.1a1.7 1.7 0 0 0-2.1-.7Z M9.8 2.4a2 2 0 0 1 2 2 1.9 1.9 0 0 1 1.3 2.9 2 2 0 0 1-.4 2.7 2 2 0 0 1-1.9 2.2c-.3.8-1 1.4-1.9 1.4-.5 0-.9-.2-1.2-.5";
 const TOOL =
   "M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1l-4 4a1.4 1.4 0 0 0 2 2l4-4a3.2 3.2 0 0 0 4.1-3.9l-1.8 1.8-1.9-.2-.2-1.9 1.7-1.9Z";
 const INFO = "M8 2.3A5.7 5.7 0 1 0 8 13.7 5.7 5.7 0 0 0 8 2.3Zm0 4.4v3.1M8 5.2v.1";
 const CHART = "M2 13V9m4 4V5m4 8V2m4 11V7";
-const PLAY = "M4.8 2.7 13 8l-8.2 5.3V2.7Z";
 const STOP = "M4.5 4.5h7v7h-7z";
 
 // Distinct enough at 6px; cycles if the prompt has more parts than colors.
@@ -240,12 +225,20 @@ const [range, setRange] = createSignal<ChartRange>("turn");
 const [tokenView, setTokenView] = createSignal<"processed" | "context">("context");
 
 export function StatsView(props: { session: MountedSession }) {
+  const ctx = usePlugin();
+  const panel = usePanel();
   const t = useT();
   const locale = useLocale();
   const session = props.session;
   const data = session.server.data;
   const observability = useObservability(session);
   const enabled = observability.enabled;
+  const nav = createScrollNav({
+    hasMore: () => false,
+    loadingMore: () => false,
+    loadMore: () => {},
+    visible: () => panel.visible(),
+  });
 
   const loaded = createMemo(() =>
     session.id ? data.session.message.list(session.id) : ([] as SessionMessageInfo[]),
@@ -743,6 +736,7 @@ export function StatsView(props: { session: MountedSession }) {
   return (
     <div class="stats">
       <style>{CSS}</style>
+      <style>{SHARED_CSS}</style>
 
       <div class="stats-head">
         <h2 class="stats-title">{t("stats.title")}</h2>
@@ -750,46 +744,51 @@ export function StatsView(props: { session: MountedSession }) {
           <Icon path={INFO} size={11} />
           {t("stats.activeContext")}
         </span>
-        <button
-          class="stats-toggle"
-          classList={{ "is-on": enabled(), "is-off": !enabled() }}
-          type="button"
-          title={enabled() ? t("observability.disable") : t("observability.enable")}
-          aria-label={enabled() ? t("observability.disable") : t("observability.enable")}
-          aria-pressed={enabled()}
-          disabled={observability.busy()}
+        <ctx.ui.Button
+          size="small"
+          variant={enabled() ? "danger" : "contrast"}
+          icon={enabled() ? "stop" : "fill-triangle-down"}
+          busy={observability.busy()}
           onClick={() => void toggle(!enabled())}
         >
-          <Icon path={enabled() ? STOP : PLAY} size={11} fill="currentColor" />
           {enabled() ? t("observability.stop") : t("observability.start")}
-        </button>
+        </ctx.ui.Button>
         <Show when={enabled()}>
-          <button
-            class="stats-icon-btn"
-            type="button"
-            title={t("stats.refresh")}
-            aria-label={t("stats.refresh")}
-            onClick={() => void refreshFull()}
-          >
-            <Icon path={REFRESH} size={14} />
-          </button>
+          <ctx.ui.Tooltip value={t("stats.refresh")}>
+            <ctx.ui.IconButton
+              icon="refresh"
+              label={t("stats.refresh")}
+              variant="ghost-muted"
+              size="small"
+              onClick={() => void refreshFull()}
+            />
+          </ctx.ui.Tooltip>
         </Show>
       </div>
 
+      <div class="stats-body">
+        <div
+          class="stats-scroll os-scroll"
+          ref={nav.ref}
+          onKeyDown={nav.onKeyDown}
+          tabIndex={nav.scrollable() ? 0 : undefined}
+          role="region"
+          aria-label={t("stats.title")}
+        >
       <Show when={!enabled()}>
         <div class="stats-empty">
           <Icon path={STOP} size={22} fill="currentColor" />
           <span class="stats-empty-title">{t("stats.disabled")}</span>
           <span class="stats-empty-hint">{t("stats.disabledHint")}</span>
-          <button
-            class="stats-action"
-            type="button"
-            disabled={observability.busy()}
+          <ctx.ui.Button
+            size="small"
+            variant="contrast"
+            icon="fill-triangle-down"
+            busy={observability.busy()}
             onClick={() => void toggle(true)}
           >
-            <Icon path={PLAY} size={11} fill="currentColor" />
             {t("observability.start")}
-          </button>
+          </ctx.ui.Button>
         </div>
       </Show>
 
@@ -1256,6 +1255,9 @@ export function StatsView(props: { session: MountedSession }) {
         </div>
       </Show>
       </Show>
+        </div>
+        <ScrollNav nav={nav} topLabel={t("scroll.top")} bottomLabel={t("scroll.bottom")} />
+      </div>
     </div>
   );
 }

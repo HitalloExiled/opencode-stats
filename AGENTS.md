@@ -28,6 +28,18 @@ O `dist/` não é versionado. O `setup.sh` do repo pai roda `npm install` e
 
 ## Layout
 
+O contrato visual e de comportamento dos painéis é
+[docs/gui-guideline.md](https://github.com/HitalloExiled/opencode-tools/blob/main/docs/gui-guideline.md).
+Código de GUI comum a mais de um plugin vive em
+`@hitalloexiled/opencode-shared/gui` (submodule `shared/` do repo pai, linkado
+em `node_modules` pelo `setup.sh`) — não copie para cá.
+
+Regras: só tokens `--v2-*` (status em `--v2-state-*`, sem hex cru); controles de
+`ctx.ui.*`; um container de scroll por painel com o `ScrollNav` do shared
+(scroll infinito, botões ao topo/ao fim, Home/End/PageUp/PageDown); toda string
+em `src/gui/i18n.ts` (PT-BR + EN-US); estados e chip do shared.
+
+
 ```text
 index.ts                 # Plugin.define do servidor
 src/

@@ -9,6 +9,8 @@ type Table = Record<string, string>;
 
 const EN: Table = {
   "stats.title": "Statistics",
+  "scroll.top": "Scroll to top",
+  "scroll.bottom": "Scroll to bottom",
   "stats.refresh": "Refresh",
   "stats.currentTurn": "Current turn",
   "stats.lastTurn": "Last turn",
@@ -144,6 +146,8 @@ const EN: Table = {
 
 const PT: Table = {
   "stats.title": "Estatísticas",
+  "scroll.top": "Ir para o topo",
+  "scroll.bottom": "Ir para o fim",
   "stats.refresh": "Atualizar",
   "stats.currentTurn": "Turno atual",
   "stats.lastTurn": "Último turno",
