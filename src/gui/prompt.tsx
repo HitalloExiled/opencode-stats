@@ -19,7 +19,7 @@ import {
 } from "solid-js";
 import { usePanel, usePlugin } from "@opencode/plugin/gui";
 import type { MountedSession } from "@opencode/plugin/gui";
-import { SHARED_CSS, ScrollNav, createScrollNav } from "@hitalloexiled/opencode-shared/gui";
+import { SHARED_CSS, ScrollNav, createScrollNav } from "opencode-shared/gui";
 
 import { formatBytes, formatClock } from "../format";
 import { StatsRpc, type PromptCapture, type PromptGroup, type PromptPart } from "./contract";

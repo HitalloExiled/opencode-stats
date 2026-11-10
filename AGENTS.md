@@ -31,7 +31,7 @@ O `dist/` não é versionado. O `setup.sh` do repo pai roda `npm install` e
 O contrato visual e de comportamento dos painéis é
 [docs/gui-guideline.md](https://github.com/HitalloExiled/opencode-tools/blob/main/docs/gui-guideline.md).
 Código de GUI comum a mais de um plugin vive em
-`@hitalloexiled/opencode-shared/gui` (submodule `shared/` do repo pai, linkado
+`opencode-shared/gui` (submodule `shared/` do repo pai, linkado
 em `node_modules` pelo `setup.sh`) — não copie para cá.
 
 Regras: só tokens `--v2-*` (status em `--v2-state-*`, sem hex cru); controles de

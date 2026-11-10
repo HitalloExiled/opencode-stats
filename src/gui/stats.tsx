@@ -20,7 +20,7 @@ import {
 import type { MountedSession } from "@opencode/plugin/gui";
 import { usePanel, usePlugin } from "@opencode/plugin/gui";
 import type { SessionMessageInfo } from "@opencode/client";
-import { SHARED_CSS, ScrollNav, createScrollNav } from "@hitalloexiled/opencode-shared/gui";
+import { SHARED_CSS, ScrollNav, createScrollNav } from "opencode-shared/gui";
 
 import { formatDuration, formatPercent, formatRate, formatTokens } from "../format";
 import {
