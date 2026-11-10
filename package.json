@@ -1,5 +1,5 @@
 {
-  "name": "@hitalloexiled/opencode-stats",
+  "name": "opencode-stats",
   "version": "0.1.0",
   "private": true,
   "type": "module",
