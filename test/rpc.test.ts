@@ -8,7 +8,7 @@ import { createCaptureStore } from "../src/capture";
 import { createObservability, type ObservabilityStorage } from "../src/observability";
 import type { CaptureInput } from "../src/prompt";
 import { createRpcHandlers } from "../src/rpc";
-import type { StatsRuntime } from "../src/runtime";
+import { RUNTIME_VERSION, type StatsRuntime } from "../src/runtime";
 import { createCaptureScheduler } from "../src/scheduler";
 
 const input = (sessionID: string, text: string): CaptureInput => ({
@@ -40,6 +40,7 @@ function setup(initial?: boolean) {
     now: () => 1000,
   });
   const runtime = {
+    version: RUNTIME_VERSION,
     store,
     scheduler,
     observability,
