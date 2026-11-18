@@ -25,75 +25,9 @@ import { formatBytes, formatClock } from "../format";
 import { StatsRpc, type PromptCapture, type PromptGroup, type PromptPart } from "./contract";
 import { useLocale, useT } from "./i18n";
 import { useObservability } from "./observability";
+import promptCss from "./prompt.scss?inline";
 
-const CSS = `
-.prompt { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; overflow: hidden; padding: 12px; color: var(--v2-text-text-base, #e8e8e8); font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-size: 12.5px; }
-.prompt-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.prompt-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
-.prompt-head { display: flex; align-items: center; gap: 8px; padding: 1px 2px 0; }
-.prompt-title { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: 0.1px; }
-.prompt-scope { color: var(--v2-text-text-faint, #6e6e6e); font-size: 10.5px; margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
-.prompt-summary { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 8px; padding: 9px 10px; display: flex; flex-direction: column; gap: 4px; }
-.prompt-summary-top { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
-.prompt-summary-agent { color: var(--v2-text-text-muted, #9b9b9b); font-size: 11.5px; font-weight: 650; }
-.prompt-summary-model { color: var(--v2-text-text-faint, #6e6e6e); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 9.5px; }
-.prompt-summary-meta { color: var(--v2-text-text-faint, #6e6e6e); font-size: 10px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
-.prompt-summary-meta b { color: var(--v2-text-text-muted, #9b9b9b); font-weight: 600; }
-.prompt-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.prompt-seg { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 7px; }
-.prompt-render { margin-left: auto; }
-.prompt-seg button { appearance: none; border: 0; background: transparent; color: var(--v2-text-text-muted, #9b9b9b); font: inherit; font-size: 10px; padding: 3px 8px; border-radius: 5px; cursor: pointer; }
-.prompt-seg button:hover { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-hover, #262626); }
-.prompt-seg button.is-active { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-pressed, #303030); font-weight: 650; }
-.prompt-search { flex: 1; min-width: 110px; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-01, #191919); color: var(--v2-text-text-base, #e8e8e8); border-radius: 7px; padding: 4px 8px; font: inherit; font-size: 10.5px; }
-.prompt-search::placeholder { color: var(--v2-text-text-faint, #6e6e6e); }
-.prompt-search:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 0; }
-.prompt-action { appearance: none; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); color: var(--v2-text-text-muted, #9b9b9b); border-radius: 7px; padding: 4px 9px; font: inherit; font-size: 10px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-.prompt-action:hover { color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-strong, #3a3a3a); background: var(--v2-overlay-simple-overlay-hover, #262626); }
-.prompt-action:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: 1px; }
-.prompt-action.is-ok { color: var(--v2-state-fg-success); border-color: color-mix(in srgb, var(--v2-state-fg-success) 30%, transparent); }
-.prompt-groups { display: flex; flex-direction: column; gap: 10px; }
-.prompt-group { display: flex; flex-direction: column; gap: 4px; }
-.prompt-group-head { display: flex; align-items: center; gap: 7px; padding: 0 2px; }
-.prompt-group-title { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; }
-.prompt-group-count { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; }
-.prompt-parts { display: flex; flex-direction: column; gap: 4px; }
-.prompt-part { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 8px; overflow: hidden; }
-.prompt-part.is-open { border-color: var(--v2-border-border-strong, #3a3a3a); }
-.prompt-part-head { display: flex; align-items: center; gap: 4px; padding-right: 4px; }
-.prompt-part-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 7px 8px; border: 0; background: transparent; color: var(--v2-text-text-base, #e8e8e8); font: inherit; text-align: left; cursor: pointer; }
-.prompt-part-toggle:hover { background: var(--v2-overlay-simple-overlay-hover, #262626); }
-.prompt-part-toggle:focus-visible { outline: 2px solid var(--v2-border-border-focus, #4c9aff); outline-offset: -2px; }
-.prompt-order { flex: none; min-width: 20px; height: 17px; padding: 0 4px; border-radius: 4px; background: var(--v2-overlay-simple-overlay-pressed, #262626); color: var(--v2-text-text-faint, #6e6e6e); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 9px; display: inline-flex; align-items: center; justify-content: center; }
-.prompt-label { min-width: 0; font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prompt-detail { flex: none; color: var(--v2-text-text-faint, #6e6e6e); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 9px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prompt-bytes { flex: none; margin-left: auto; color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; font-variant-numeric: tabular-nums; }
-.prompt-copy { flex: none; appearance: none; border: 1px solid transparent; background: transparent; color: var(--v2-text-text-faint, #6e6e6e); width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; cursor: pointer; }
-.prompt-copy:hover { color: var(--v2-text-text-base, #e8e8e8); background: var(--v2-overlay-simple-overlay-hover, #262626); border-color: var(--v2-border-border-muted, #2c2c2c); }
-.prompt-copy.is-ok { color: var(--v2-state-fg-success); }
-.prompt-part-body { border-top: 1px solid var(--v2-border-border-muted, #2c2c2c); padding: 8px; background: var(--v2-background-bg-layer-01, #171717); }
-.prompt-pre { margin: 0; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: var(--v2-text-text-muted, #b0b0b0); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 10.5px; line-height: 1.5; }
-.prompt-pre.is-full { max-height: 520px; }
-.prompt-md { max-height: 280px; overflow: auto; color: var(--v2-text-text-muted, #b0b0b0); font-size: 11.5px; line-height: 1.55; overflow-wrap: anywhere; scrollbar-width: thin; }
-.prompt-md.is-full { max-height: 520px; }
-.prompt-md pre { overflow-x: auto; }
-.prompt-full-md { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-01, #171717); border-radius: 8px; padding: 9px; }
-.prompt-more { margin-top: 6px; appearance: none; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: transparent; color: var(--v2-text-text-muted, #9b9b9b); border-radius: 6px; padding: 3px 7px; font: inherit; font-size: 9.5px; cursor: pointer; }
-.prompt-more:hover { color: var(--v2-text-text-base, #e8e8e8); border-color: var(--v2-border-border-strong, #3a3a3a); }
-.prompt-full { display: flex; flex-direction: column; gap: 6px; }
-.prompt-full-head { display: flex; align-items: center; gap: 7px; color: var(--v2-text-text-faint, #6e6e6e); font-size: 10px; }
-.prompt-full-pre { margin: 0; border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-01, #171717); border-radius: 8px; padding: 9px; max-height: 560px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: var(--v2-text-text-muted, #b0b0b0); font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 10.5px; line-height: 1.5; }
-.prompt-banner { border: 1px solid var(--v2-border-border-muted, #2c2c2c); background: var(--v2-background-bg-layer-02, #1a1a1a); border-radius: 8px; padding: 7px 9px; color: var(--v2-text-text-muted, #9b9b9b); font-size: 10.5px; display: flex; align-items: center; gap: 7px; }
-.prompt-banner.is-error { color: var(--v2-state-fg-danger); border-color: color-mix(in srgb, var(--v2-state-fg-danger) 30%, transparent); background: color-mix(in srgb, var(--v2-state-fg-danger) 8%, transparent); }
-.prompt-spinner { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--v2-border-border-strong, #3a3a3a); border-top-color: var(--v2-icon-icon-accent, #4dc8b8); animation: prompt-spin 0.8s linear infinite; }
-@keyframes prompt-spin { to { transform: rotate(360deg); } }
-.prompt-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 44px 16px; text-align: center; color: var(--v2-text-text-muted, #9b9b9b); }
-.prompt-empty svg { opacity: 0.5; }
-.prompt-empty-title { font-weight: 600; font-size: 12.5px; }
-.prompt-empty-hint { color: var(--v2-text-text-faint, #6e6e6e); font-size: 11px; max-width: 270px; }
-.prompt-empty .prompt-action { margin-top: 4px; }
-.prompt-privacy { color: var(--v2-text-text-faint, #6e6e6e); font-size: 9.5px; display: flex; align-items: center; gap: 6px; padding: 0 2px; }
-`;
+const CSS = promptCss;
 
 const COPY = "M5.5 5.5V3.2c0-.5.4-.9.9-.9h6.4c.5 0 .9.4.9.9v6.4c0 .5-.4.9-.9.9h-2.3M3.2 5.5h6.4c.5 0 .9.4.9.9v6.4c0 .5-.4.9-.9.9H3.2a.9.9 0 0 1-.9-.9V6.4c0-.5.4-.9.9-.9Z";
 const CHECK = "m3.4 8.4 3 3 6.2-6.6";

@@ -10,18 +10,9 @@ import { createMemo } from "solid-js";
 
 import { formatRate } from "../format";
 import { useLocale, useT } from "./i18n";
+import gaugeCss from "./gauge.scss?inline";
 
-const CSS = `
-.stats-gauge { display: block; width: 100%; max-width: 168px; height: auto; overflow: visible; }
-.stats-gauge-track { fill: none; stroke: var(--v2-border-border-strong, #3a3a3a); stroke-width: 11; stroke-linecap: round; }
-.stats-gauge-value { fill: none; stroke: var(--v2-icon-icon-accent, #4dc8b8); stroke-width: 11; stroke-linecap: round; transition: stroke-dasharray 320ms ease; }
-.stats-gauge-avg { stroke: var(--v2-text-text-muted, #9b9b9b); stroke-width: 1.4; stroke-linecap: round; }
-.stats-gauge-dot { fill: var(--v2-icon-icon-accent, #4dc8b8); }
-.stats-gauge-number { fill: var(--v2-text-text-base, #e8e8e8); font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-size: 27px; font-weight: 720; letter-spacing: -0.8px; }
-.stats-gauge-unit { fill: var(--v2-text-text-faint, #6e6e6e); font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-size: 9.5px; font-weight: 650; letter-spacing: 0.4px; text-transform: uppercase; }
-.stats-gauge-edge { fill: var(--v2-text-text-faint, #6e6e6e); font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-size: 8.5px; }
-.stats-gauge-avg-label { fill: var(--v2-text-text-muted, #9b9b9b); font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-size: 8.5px; }
-`;
+const CSS = gaugeCss;
 
 const CX = 80;
 const CY = 78;
