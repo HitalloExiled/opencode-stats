@@ -61,6 +61,7 @@ src/
     observability.ts     # estado compartilhado do interruptor + visibilidade
     gauge.tsx            # gauge SVG semicircular
     chart.tsx            # gráfico de linha/área SVG
+    context-chart.tsx    # crescimento do contexto + checkpoints
     header.tsx           # Slot session.header
     i18n.ts              # PT-BR + EN-US
 test/                    # bun:test das funções puras
@@ -163,6 +164,12 @@ classificado; documente isso se for adicionar um fallback.
   cresce (`niceScale`); o eixo Y do gráfico é dinâmico (`chartScale`), calculado
   a partir do pico e da média das amostras **dentro da janela exibida** (Turno
   ou Sessão), então os rótulos precisam ser reativos.
+- O gráfico de crescimento do contexto (`src/gui/context-chart.tsx`) usa um
+  ponto por request da timeline (`input + cache.read + cache.write`) e desenha
+  uma linha vertical em cada compactação `completed` — checkpoint visual, sem
+  persistência. `running`/`failed` não marcam reset. O eixo em tokens usa
+  `tokenScale`; a visão é best effort para mensagens que já saíram da janela
+  viva.
 - Layout: use as variáveis `--v2-*` com fallback (como `notes`/`plans`) para
   funcionar nos temas claro e escuro. O bundle carrega o próprio CSS em
   `<style>`.

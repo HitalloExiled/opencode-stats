@@ -36,6 +36,8 @@ import {
   type ToolCall,
 } from "../metrics";
 import {
+  compactionCheckpoints,
+  contextSamples,
   createRingBuffer,
   niceScale,
   samplesForTurn,
@@ -43,6 +45,7 @@ import {
   type RateSample,
 } from "../history";
 import { RateChart, type ChartRange } from "./chart";
+import { ContextChart } from "./context-chart";
 import { Gauge } from "./gauge";
 import { useLocale, useT } from "./i18n";
 import { StatsRpc, type PromptCapture } from "./contract";
@@ -139,6 +142,10 @@ export function StatsView(props: { session: MountedSession }) {
   const sessionMetrics = createMemo(() => analyzeSession(timeline()));
   const activeMetrics = createMemo(() => analyzeSession(messages()));
   const sessionSamples = createMemo(() => stepSamples(timeline()));
+  // Context growth spans the whole timeline; completed compactions are drawn
+  // as checkpoints where the prompt size drops.
+  const contextSeries = createMemo(() => contextSamples(timeline()));
+  const contextMarks = createMemo(() => compactionCheckpoints(timeline(), contextSeries()));
 
   let buffer = createRingBuffer(300);
   const [liveSamples, setLiveSamples] = createSignal<RateSample[]>([]);
@@ -920,6 +927,13 @@ export function StatsView(props: { session: MountedSession }) {
                 : t("stats.processedHint")}
             </span>
           </div>
+
+          <ContextChart
+            samples={contextSeries()}
+            checkpoints={contextMarks()}
+            limit={contextLimit()}
+            now={now()}
+          />
 
           <Show when={tokenView() === "context" && tokenParts().hasRequest}>
             <div class="stats-context">

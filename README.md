@@ -61,6 +61,11 @@ symlink, instala as dependências e compila o bundle da GUI.
   um ponto exato por passo concluído); na sessão, um ponto exato por passo
   concluído ao longo de toda a sessão. O eixo Y se ajusta à janela exibida e a
   média dessa janela aparece como linha tracejada.
+- **Crescimento do contexto**: no card Sessão, acima da barra do contexto,
+  gráfico de linha do prompt de cada request (`input + cache.read +
+  cache.write`) ao longo da timeline. Cada compactação **concluída** vira um
+  checkpoint vertical, com o tamanho do contexto antes e depois no tooltip.
+  Compactações em andamento ou com falha não marcam reset. Nada é persistido.
 - **Turno atual**: duração, output, 1º token, reasoning (tokens, tempo e
   participação no output) e tool calls com status, duração e argumento resumido.
 - **Sessão**: turnos, passos, tempo médio por resposta e por turno, tok/s
@@ -144,7 +149,10 @@ O plugin tem duas partes:
     anteriores ao início do histórico ativo ficam de fora, porque não vão no
     próximo request.
   O painel refaz o fetch de `session.context` assim que uma compactação conclui,
-  sem esperar o turno terminar.
+  sem esperar o turno terminar. O gráfico de **crescimento do contexto** também
+  lê a timeline (um ponto por request) e marca as compactações concluídas como
+  checkpoints; como a janela viva guarda só as mensagens recentes, ele é best
+  effort para o início da sessão.
 
 Store, scheduler e chave de observabilidade são **globais ao processo**
 (`globalThis.__opencodeStatsRuntime__`), não recriados a cada `setup`: um hot
@@ -170,6 +178,8 @@ mas não limpa o store; apenas desligar a observabilidade limpa.
   (mantendo o histórico anterior à compactação). A visão **Contexto** usa só o
   histórico ativo (mensagens depois da última compactação), que é o que o
   próximo request enviaria.
+- O gráfico de crescimento do contexto cobre a timeline disponível na janela
+  viva; mensagens que já saíram dela não são recuperáveis.
 - A captura vê o `system` no momento em que o hook roda. Como o `stats` é
   carregado depois de `memory`, `notes` e `plans` (ordem alfabética), os blocos
   deles entram; um plugin carregado depois do `stats` pode ficar sem rótulo.
@@ -221,6 +231,7 @@ src/
     observability.ts     # estado compartilhado do interruptor
     gauge.tsx            # gauge SVG
     chart.tsx            # gráfico de linha SVG
+    context-chart.tsx    # crescimento do contexto + checkpoints
     header.tsx           # faixa do cabeçalho
     i18n.ts              # PT-BR + EN-US (fallback EN-US)
 test/                    # bun test das funções puras

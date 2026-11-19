@@ -6,7 +6,10 @@
  * a browser.
  */
 
-import type { SessionMessageInfo } from "@opencode/client";
+import type {
+  SessionMessageAssistant,
+  SessionMessageInfo,
+} from "@opencode/client";
 
 import { isAssistant, stepMetrics, type Turn } from "./metrics.js";
 
@@ -95,7 +98,7 @@ export function samplesForTurn(turn: Turn | undefined, live: readonly RateSample
  * next 1 Hz tick; there is no fixed window that truncates the turn.
  */
 export function sampleDomain(
-  samples: readonly RateSample[],
+  samples: readonly SeriesSample[],
   now: number,
 ): { t0: number; t1: number } {
   const first = samples[0]?.t;
@@ -105,19 +108,19 @@ export function sampleDomain(
   return { t0, t1: t1 > t0 ? t1 : t0 + 1000 };
 }
 
-export function averageValue(samples: readonly RateSample[]): number | undefined {
+export function averageValue(samples: readonly SeriesSample[]): number | undefined {
   const values = samples.map((sample) => sample.value).filter((value) => Number.isFinite(value) && value > 0);
   if (values.length === 0) return undefined;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-export function maxValue(samples: readonly RateSample[]): number | undefined {
+export function maxValue(samples: readonly SeriesSample[]): number | undefined {
   const values = samples.map((sample) => sample.value).filter((value) => Number.isFinite(value) && value > 0);
   if (values.length === 0) return undefined;
   return Math.max(...values);
 }
 
-export function lastValue(samples: readonly RateSample[]): number | undefined {
+export function lastValue(samples: readonly SeriesSample[]): number | undefined {
   for (let index = samples.length - 1; index >= 0; index--) {
     const sample = samples[index];
     if (sample && Number.isFinite(sample.value)) return sample.value;
@@ -150,19 +153,25 @@ export function chartScale(max: number): number {
   return Math.ceil(target / 200) * 200;
 }
 
-export type NormalizedPoint = {
-  x: number;
-  y: number;
-  sample: RateSample;
+/** Anything the chart geometry can plot: a time and a magnitude. */
+export type SeriesSample = {
+  t: number;
+  value: number;
 };
 
-/** Maps samples to 0..1 coordinates; y=0 is zero rate and y=1 is scaleMax. */
-export function normalizeSeries(
-  samples: readonly RateSample[],
+export type NormalizedPoint<T extends SeriesSample = RateSample> = {
+  x: number;
+  y: number;
+  sample: T;
+};
+
+/** Maps samples to 0..1 coordinates; y=0 is zero and y=1 is scaleMax. */
+export function normalizeSeries<T extends SeriesSample>(
+  samples: readonly T[],
   t0: number,
   t1: number,
   scaleMax: number,
-): NormalizedPoint[] {
+): NormalizedPoint<T>[] {
   if (!Number.isFinite(t0) || !Number.isFinite(t1) || t1 <= t0 || scaleMax <= 0) return [];
   return samples
     .filter((sample) => sample.t >= t0 && sample.t <= t1 && Number.isFinite(sample.value))
@@ -177,7 +186,11 @@ export function normalizeSeries(
 const round = (value: number): number => Math.round(value * 1000) / 1000;
 
 /** SVG path in the given plot size; x grows right, y grows down. */
-export function linePath(points: readonly NormalizedPoint[], width: number, height: number): string {
+export function linePath(
+  points: readonly NormalizedPoint<SeriesSample>[],
+  width: number,
+  height: number,
+): string {
   if (points.length === 0) return "";
   return points
     .map((point, index) => {
@@ -189,7 +202,11 @@ export function linePath(points: readonly NormalizedPoint[], width: number, heig
 }
 
 /** Closes the line along the bottom edge for the area fill. */
-export function areaPath(points: readonly NormalizedPoint[], width: number, height: number): string {
+export function areaPath(
+  points: readonly NormalizedPoint<SeriesSample>[],
+  width: number,
+  height: number,
+): string {
   if (points.length === 0) return "";
   const line = linePath(points, width, height);
   const first = points[0]!;
@@ -200,4 +217,117 @@ export function areaPath(points: readonly NormalizedPoint[], width: number, heig
 /** Smooths nothing; returns the indices of exact step points for dots. */
 export function stepPointIndices(points: readonly NormalizedPoint[]): number[] {
   return points.flatMap((point, index) => (point.sample.kind === "step" ? [index] : []));
+}
+
+/* ------------------------------------------------------------------ */
+/* Context growth                                                      */
+/* ------------------------------------------------------------------ */
+
+/** One request's prompt size: uncached input plus the cached prefix. */
+export type ContextSample = {
+  /** Epoch milliseconds of the request. */
+  t: number;
+  /** Prompt tokens: input + cache read + cache write. */
+  value: number;
+  messageID: string;
+};
+
+export type CompactionReason = "auto" | "manual";
+
+export type CompactionCheckpoint = {
+  id: string;
+  /** Epoch milliseconds, when the compaction was recorded. */
+  t: number;
+  reason: CompactionReason;
+  /** Prompt size of the last request before the compaction. */
+  before?: number | undefined;
+  /** Prompt size of the first request after the compaction. */
+  after?: number | undefined;
+};
+
+/**
+ * Prompt tokens of one request. Providers report the uncached input and the
+ * cached prefix separately; both are sent to the model, so both count. This is
+ * the same convention the context composition card uses.
+ */
+export function promptTokens(message: SessionMessageAssistant): number {
+  const tokens = message.tokens;
+  if (!tokens) return 0;
+  return tokens.input + tokens.cache.read + tokens.cache.write;
+}
+
+/** One point per completed request, in timeline order. */
+export function contextSamples(messages: readonly SessionMessageInfo[]): ContextSample[] {
+  const samples: ContextSample[] = [];
+  for (const message of messages) {
+    if (!isAssistant(message) || message.tokens === undefined) continue;
+    const value = promptTokens(message);
+    if (
+      !Number.isFinite(message.time.created) ||
+      !Number.isFinite(value) ||
+      value <= 0
+    ) {
+      continue;
+    }
+    samples.push({ t: message.time.created, value, messageID: String(message.id) });
+  }
+  return samples.sort((a, b) => a.t - b.t || a.messageID.localeCompare(b.messageID));
+}
+
+/**
+ * Visual checkpoints for completed compactions. Only `completed` counts: a
+ * running compaction may still fail and a failed one never reset the context.
+ * `before`/`after` let the marker describe the drop.
+ */
+export function compactionCheckpoints(
+  messages: readonly SessionMessageInfo[],
+  samples: readonly ContextSample[] = contextSamples(messages),
+): CompactionCheckpoint[] {
+  const ordered = [...samples].sort(
+    (a, b) => a.t - b.t || a.messageID.localeCompare(b.messageID),
+  );
+  const checkpoints: CompactionCheckpoint[] = [];
+  for (const message of messages) {
+    if (message.type !== "compaction" || message.status !== "completed") continue;
+    if (!Number.isFinite(message.time.created)) continue;
+    const at = message.time.created;
+    let before: number | undefined;
+    let after: number | undefined;
+    for (const sample of ordered) {
+      if (sample.t < at) before = sample.value;
+      else if (sample.t > at) {
+        after = sample.value;
+        break;
+      }
+    }
+    checkpoints.push({
+      id: String(message.id),
+      t: at,
+      reason: message.reason,
+      ...(before !== undefined ? { before } : {}),
+      ...(after !== undefined ? { after } : {}),
+    });
+  }
+  return checkpoints.sort((a, b) => a.t - b.t || a.id.localeCompare(b.id));
+}
+
+/** Round step for the context chart's y axis, in tokens. */
+const TOKEN_STEPS = [
+  1_000,
+  2_000,
+  5_000,
+  10_000,
+  20_000,
+  50_000,
+  100_000,
+  200_000,
+  500_000,
+  1_000_000,
+];
+
+export function tokenScale(max: number): number {
+  const target = Number.isFinite(max) && max > 0 ? max * 1.05 : TOKEN_STEPS[0]!;
+  const found = TOKEN_STEPS.find((step) => step >= target);
+  if (found !== undefined) return found;
+  return Math.ceil(target / 1_000_000) * 1_000_000;
 }

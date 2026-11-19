@@ -8,13 +8,17 @@ import type { SessionMessageAssistant, SessionMessageInfo } from "@opencode/clie
 import {
   averageValue,
   chartScale,
+  compactionCheckpoints,
+  contextSamples,
   createRingBuffer,
   lastValue,
   maxValue,
   niceScale,
+  promptTokens,
   sampleDomain,
   samplesForTurn,
   stepSamples,
+  tokenScale,
   type RateSample,
 } from "../src/history";
 import type { Turn } from "../src/metrics";
@@ -31,6 +35,9 @@ const assistant = (input: {
   streamed?: number;
   output?: number;
   reasoning?: number;
+  inputTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
 }): SessionMessageAssistant =>
   ({
     type: "assistant",
@@ -43,12 +50,27 @@ const assistant = (input: {
     model: { providerID: "p", id: "m" },
     content: [{ type: "text", text: "hello" }],
     tokens: {
-      input: 0,
+      input: input.inputTokens ?? 0,
       output: input.output ?? 10,
       reasoning: input.reasoning ?? 0,
-      cache: { read: 0, write: 0 },
+      cache: { read: input.cacheRead ?? 0, write: input.cacheWrite ?? 0 },
     },
   }) as SessionMessageAssistant;
+
+const compaction = (input: {
+  id?: string;
+  created: number;
+  status?: "completed" | "running" | "failed";
+  reason?: "auto" | "manual";
+}): SessionMessageInfo =>
+  ({
+    type: "compaction",
+    id: input.id ?? "c1",
+    time: { created: input.created },
+    status: input.status ?? "completed",
+    reason: input.reason ?? "auto",
+    summary: "summary",
+  }) as SessionMessageInfo;
 
 describe("createRingBuffer", () => {
   test("keeps the newest samples up to capacity", () => {
@@ -149,5 +171,84 @@ describe("aggregates", () => {
     expect(maxValue(samples)).toBe(30);
     expect(lastValue(samples)).toBe(30);
     expect(averageValue([])).toBeUndefined();
+  });
+});
+
+describe("promptTokens", () => {
+  test("counts uncached input plus the cached prefix", () => {
+    const message = assistant({ inputTokens: 1_000, cacheRead: 4_000, cacheWrite: 500 });
+    expect(promptTokens(message)).toBe(5_500);
+  });
+
+  test("is zero without tokens", () => {
+    expect(promptTokens({ ...assistant({}), tokens: undefined } as SessionMessageAssistant)).toBe(0);
+  });
+});
+
+describe("contextSamples", () => {
+  test("plots one point per request, ordered by time", () => {
+    const messages: SessionMessageInfo[] = [
+      assistant({ id: "a2", created: 3_000, inputTokens: 2_000, cacheRead: 1_000 }) as SessionMessageInfo,
+      assistant({ id: "a1", created: 1_000, inputTokens: 500, cacheRead: 250, cacheWrite: 250 }) as SessionMessageInfo,
+      compaction({ created: 3_500 }),
+    ];
+
+    expect(contextSamples(messages)).toEqual([
+      { t: 1_000, value: 1_000, messageID: "a1" },
+      { t: 3_000, value: 3_000, messageID: "a2" },
+    ]);
+  });
+
+  test("drops empty and invalid prompts", () => {
+    const messages: SessionMessageInfo[] = [
+      assistant({ id: "empty", created: 1_000 }) as SessionMessageInfo,
+      assistant({
+        id: "bad",
+        created: 2_000,
+        inputTokens: Number.NaN,
+      }) as SessionMessageInfo,
+    ];
+    expect(contextSamples(messages)).toEqual([]);
+  });
+});
+
+describe("compactionCheckpoints", () => {
+  test("marks only completed compactions and keeps the reason", () => {
+    const messages: SessionMessageInfo[] = [
+      assistant({ id: "a1", created: 1_000, inputTokens: 10_000 }) as SessionMessageInfo,
+      compaction({ id: "running", created: 2_000, status: "running" }),
+      compaction({ id: "failed", created: 2_500, status: "failed" }),
+      compaction({ id: "done", created: 3_000, reason: "manual" }),
+      assistant({ id: "a2", created: 4_000, inputTokens: 2_000 }) as SessionMessageInfo,
+    ];
+
+    const checkpoints = compactionCheckpoints(messages);
+    expect(checkpoints).toHaveLength(1);
+    expect(checkpoints[0]).toEqual({
+      id: "done",
+      t: 3_000,
+      reason: "manual",
+      before: 10_000,
+      after: 2_000,
+    });
+  });
+
+  test("leaves before/after undefined without a surrounding request", () => {
+    const messages: SessionMessageInfo[] = [compaction({ id: "only", created: 1_000 })];
+    expect(compactionCheckpoints(messages)).toEqual([
+      { id: "only", t: 1_000, reason: "auto" },
+    ]);
+  });
+});
+
+describe("tokenScale", () => {
+  test("rounds up to the next token step with headroom", () => {
+    expect(tokenScale(0)).toBe(1_000);
+    expect(tokenScale(12_000)).toBe(20_000);
+    expect(tokenScale(100_000)).toBe(200_000);
+  });
+
+  test("keeps round millions above the table", () => {
+    expect(tokenScale(2_100_000)).toBe(3_000_000);
   });
 });
