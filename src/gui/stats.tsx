@@ -43,8 +43,6 @@ import {
   niceScale,
   samplesForTurn,
   stepSamples,
-  windowedCheckpoints,
-  windowedSamples,
   type RateSample,
 } from "../history";
 import { RateChart, type ChartRange } from "./chart";
@@ -147,14 +145,11 @@ export function StatsView(props: { session: MountedSession }) {
   const sessionSamples = createMemo(() => stepSamples(timeline()));
   // Context growth spans the whole timeline; completed compactions are drawn
   // as checkpoints where the prompt size drops. The accumulated total always
-  // covers the full session, while the chart itself only draws a 1M token
-  // sliding window so it stays readable on long sessions.
+  // covers the full session; the request-count sliding window the chart
+  // itself applies for drawing is the chart's own concern (its x axis is
+  // request index, selectable from a control in its header).
   const contextSeries = createMemo(() => contextSamples(timeline()));
   const contextMarks = createMemo(() => compactionCheckpoints(timeline(), contextSeries()));
-  const contextWindowSeries = createMemo(() => windowedSamples(contextSeries()));
-  const contextWindowMarks = createMemo(() =>
-    windowedCheckpoints(contextMarks(), contextWindowSeries()),
-  );
   const contextAccumulated = createMemo(() => accumulatedTokens(contextSeries()));
 
   let buffer = createRingBuffer(300);
@@ -939,11 +934,10 @@ export function StatsView(props: { session: MountedSession }) {
           </div>
 
           <ContextChart
-            samples={contextWindowSeries()}
-            checkpoints={contextWindowMarks()}
+            samples={contextSeries()}
+            checkpoints={contextMarks()}
             accumulated={contextAccumulated()}
             limit={contextLimit()}
-            now={now()}
           />
 
           <Show when={tokenView() === "context" && tokenParts().hasRequest}>

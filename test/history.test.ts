@@ -20,8 +20,9 @@ import {
   samplesForTurn,
   stepSamples,
   tokenScale,
-  windowedCheckpoints,
-  windowedSamples,
+  checkpointIndex,
+  requestWindow,
+  requestWindowCheckpoints,
   type CompactionCheckpoint,
   type ContextSample,
   type RateSample,
@@ -280,40 +281,38 @@ describe("tokenScale", () => {
   });
 });
 
-describe("windowedSamples", () => {
+describe("requestWindow", () => {
   const points = (values: number[]): ContextSample[] =>
     values.map((value, index) => ({ t: index + 1, value, messageID: `m${index + 1}` }));
 
-  test("keeps everything when the total is under the limit", () => {
+  test("keeps everything when the session is shorter than the window", () => {
     const samples = points([100, 200, 300]);
-    expect(windowedSamples(samples, 1_000)).toEqual(samples);
+    expect(requestWindow(samples, 10)).toEqual(samples);
   });
 
-  test("keeps only the most recent tail that fits the limit", () => {
-    const samples = points([100, 100, 100, 100]);
-    expect(windowedSamples(samples, 250)).toEqual(samples.slice(1));
+  test("keeps only the N most recent requests", () => {
+    const samples = points([1, 2, 3, 4, 5]);
+    expect(requestWindow(samples, 2)).toEqual(samples.slice(3));
   });
 
-  test("includes the boundary sample that crosses the limit", () => {
-    const samples = points([900_000, 50_000]);
-    const result = windowedSamples(samples, 100_000);
-    // The newest sample alone (50_000) is under the limit; adding the next
-    // one (900_000) would cross it, so it is included as the boundary and
-    // nothing else fits.
-    expect(result).toEqual(samples);
+  test("returns everything when count equals the length", () => {
+    const samples = points([1, 2, 3]);
+    expect(requestWindow(samples, 3)).toEqual(samples);
   });
 
-  test("returns an empty array for an empty input", () => {
-    expect(windowedSamples([], 1_000_000)).toEqual([]);
+  test("returns an empty array for count <= 0 or an empty input", () => {
+    expect(requestWindow(points([1, 2]), 0)).toEqual([]);
+    expect(requestWindow(points([1, 2]), -5)).toEqual([]);
+    expect(requestWindow([], 300)).toEqual([]);
   });
 
-  test("defaults to the 1M token ceiling", () => {
-    const samples = points([2_000_000]);
-    expect(windowedSamples(samples)).toEqual(samples);
+  test("defaults to 300 requests", () => {
+    const samples = points(Array.from({ length: 10 }, (_, i) => i));
+    expect(requestWindow(samples)).toEqual(samples);
   });
 });
 
-describe("windowedCheckpoints", () => {
+describe("requestWindowCheckpoints", () => {
   const checkpoint = (id: string, t: number): CompactionCheckpoint => ({
     id,
     t,
@@ -326,10 +325,36 @@ describe("windowedCheckpoints", () => {
       { t: 30, value: 1, messageID: "b" },
     ];
     const checkpoints = [checkpoint("old", 5), checkpoint("in", 20), checkpoint("new", 40)];
-    expect(windowedCheckpoints(checkpoints, windowed)).toEqual([checkpoint("in", 20)]);
+    expect(requestWindowCheckpoints(checkpoints, windowed)).toEqual([checkpoint("in", 20)]);
   });
 
   test("returns nothing when the window is empty", () => {
-    expect(windowedCheckpoints([checkpoint("x", 1)], [])).toEqual([]);
+    expect(requestWindowCheckpoints([checkpoint("x", 1)], [])).toEqual([]);
+  });
+});
+
+describe("checkpointIndex", () => {
+  const windowed: ContextSample[] = [
+    { t: 0, value: 1, messageID: "a" },
+    { t: 10, value: 1, messageID: "b" },
+    { t: 20, value: 1, messageID: "c" },
+  ];
+  const checkpoint = (t: number): CompactionCheckpoint => ({ id: "c", t, reason: "auto" });
+
+  test("places a checkpoint between the two requests it falls between", () => {
+    expect(checkpointIndex(checkpoint(5), windowed)).toBe(0.5);
+    expect(checkpointIndex(checkpoint(15), windowed)).toBe(1.5);
+  });
+
+  test("clamps to the last index when newer than the last request", () => {
+    expect(checkpointIndex(checkpoint(999), windowed)).toBe(2);
+  });
+
+  test("clamps to the first index at or before the first request", () => {
+    expect(checkpointIndex(checkpoint(0), windowed)).toBe(0);
+  });
+
+  test("returns 0 for an empty window", () => {
+    expect(checkpointIndex(checkpoint(5), [])).toBe(0);
   });
 });

@@ -167,16 +167,20 @@ classificado; documente isso se for adicionar um fallback.
 - O gráfico de crescimento do contexto (`src/gui/context-chart.tsx`) usa um
   ponto por request da timeline (`input + cache.read + cache.write`) e desenha
   uma linha vertical em cada compactação `completed` — checkpoint visual, sem
-  persistência. `running`/`failed` não marcam reset. O eixo em tokens usa
-  `tokenScale`. O cabeçalho mostra o último valor e o total acumulado da sessão
-  (`accumulatedTokens`, sem reset na compactação, sempre calculado sobre a
-  série completa). O gráfico em si desenha só uma **janela deslizante de 1M
-  tokens** (`windowedSamples`/`windowedCheckpoints`, teto `CONTEXT_WINDOW_TOKENS`):
-  `stats.tsx` recorta a série e os checkpoints antes de passar para
-  `<ContextChart>`, que recebe `samples` (já recortado) e `accumulated` (número
-  pronto, da série completa) como props separadas — nunca deriva o acumulado da
-  prop `samples`. A visão é best effort para mensagens que já saíram da janela
-  viva.
+  persistência. `running`/`failed` não marcam reset. O eixo Y em tokens usa
+  `tokenScale`; o **eixo X é o índice do request** (`normalizeByIndex`), não
+  tempo — os pontos ficam igualmente espaçados, sem relação com o intervalo
+  real entre requests. O cabeçalho mostra o último valor e o total acumulado
+  da sessão (`accumulatedTokens`, sem reset na compactação, sempre sobre a
+  série completa, via prop `accumulated`). `stats.tsx` passa a série e os
+  checkpoints **completos** (sem recortar); o próprio `ContextChart` aplica a
+  janela deslizante por contagem de requests (`requestWindow`,
+  `requestWindowCheckpoints`, `CONTEXT_WINDOW_SIZES` = 100/300/500, default
+  `CONTEXT_WINDOW_DEFAULT` = 300) com um signal interno e um seletor no
+  cabeçalho (reaproveita a classe `.stats-token-view`); `checkpointIndex`
+  posiciona cada checkpoint entre os dois requests da janela em que ele caiu.
+  A visão é best effort para mensagens que já saíram da janela viva da
+  timeline.
 - Layout: use as variáveis `--v2-*` com fallback (como `notes`/`plans`) para
   funcionar nos temas claro e escuro. O bundle carrega o próprio CSS em
   `<style>`.

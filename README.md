@@ -63,14 +63,17 @@ symlink, instala as dependências e compila o bundle da GUI.
   média dessa janela aparece como linha tracejada.
 - **Crescimento do contexto**: no card Sessão, acima da barra do contexto,
   gráfico de linha do prompt de cada request (`input + cache.read +
-  cache.write`) ao longo da timeline. Cada compactação **concluída** vira um
-  checkpoint vertical, com o tamanho do contexto antes e depois no tooltip.
-  Compactações em andamento ou com falha não marcam reset. O cabeçalho mostra o
-  último valor e o **total acumulado** da sessão (soma dos prompts de todos os
-  requests, sem reset na compactação). O gráfico em si mostra uma **janela
-  deslizante dos últimos 1.000.000 tokens** acumulados: pontos mais antigos
-  saem do desenho (mas continuam contando no acumulado do cabeçalho); sessões
-  abaixo de 1M mostram tudo. Nada é persistido.
+  cache.write`). O **eixo X é o número do request** (1º, 2º, 3º...), não o
+  tempo — os pontos ficam igualmente espaçados, sem relação com o intervalo
+  real entre requests. Cada compactação **concluída** vira um checkpoint
+  vertical entre os dois requests em que ela caiu, com o tamanho do contexto
+  antes e depois no tooltip. Compactações em andamento ou com falha não marcam
+  reset. O cabeçalho mostra o último valor e o **total acumulado** da sessão
+  (soma dos prompts de todos os requests, sem reset na compactação, sempre a
+  sessão inteira). O gráfico em si mostra uma **janela deslizante de
+  requests** — um seletor no cabeçalho alterna entre os últimos 100, 300
+  (padrão) ou 500 requests; checkpoints fora da janela selecionada somem do
+  desenho; sessões mais curtas que a janela mostram tudo. Nada é persistido.
 - **Turno atual**: duração, output, 1º token, reasoning (tokens, tempo e
   participação no output) e tool calls com status, duração e argumento resumido.
 - **Sessão**: turnos, passos, tempo médio por resposta e por turno, tok/s

@@ -183,6 +183,25 @@ export function normalizeSeries<T extends SeriesSample>(
     }));
 }
 
+/**
+ * Maps samples to 0..1 coordinates by position instead of time: x is the
+ * sample's index over the count of samples minus one (single sample pins to
+ * x=0), y is the usual value/scaleMax. Used by the context chart, whose x
+ * axis is "request number", not a time span.
+ */
+export function normalizeByIndex<T extends SeriesSample>(
+  samples: readonly T[],
+  scaleMax: number,
+): NormalizedPoint<T>[] {
+  if (samples.length === 0 || scaleMax <= 0) return [];
+  const last = samples.length - 1;
+  return samples.map((sample, index) => ({
+    x: last > 0 ? index / last : 0,
+    y: Number.isFinite(sample.value) ? Math.min(1, Math.max(0, sample.value / scaleMax)) : 0,
+    sample,
+  }));
+}
+
 const round = (value: number): number => Math.round(value * 1000) / 1000;
 
 /** SVG path in the given plot size; x grows right, y grows down. */
@@ -324,39 +343,28 @@ export function accumulatedTokens(samples: readonly ContextSample[]): number {
 }
 
 /**
- * Fixed ceiling for the chart's sliding window, in tokens. The chart only
- * draws the most recent samples whose prompts sum to at most this many
- * tokens; the session-wide total (`accumulatedTokens`) is unaffected.
+ * Default number of requests the context chart's sliding window shows,
+ * selectable from `CONTEXT_WINDOW_SIZES`.
  */
-export const CONTEXT_WINDOW_TOKENS = 1_000_000;
+export const CONTEXT_WINDOW_DEFAULT = 300;
+
+/** Window sizes offered by the chart's selector, in requests. */
+export const CONTEXT_WINDOW_SIZES = [100, 300, 500] as const;
 
 /**
- * Keeps only the most recent samples whose prompt sizes sum to at most
- * `limit` tokens. Walks from the newest sample backwards, including samples
- * until adding one more would exceed the limit; that boundary sample is kept
- * even if it alone pushes the running sum over the limit, so a single huge
- * prompt still shows up instead of leaving the window empty. Below the
- * limit, every sample is kept (same order as the input).
+ * Keeps only the most recent `count` samples (by position, not by a time or
+ * token cutoff) — the x axis plots one tick per request, so the window is a
+ * request count, not a token sum. A session shorter than `count` keeps every
+ * sample it has; `count <= 0` or a non-finite count yields an empty window.
  */
-export function windowedSamples(
+export function requestWindow(
   samples: readonly ContextSample[],
-  limit: number = CONTEXT_WINDOW_TOKENS,
+  count: number = CONTEXT_WINDOW_DEFAULT,
 ): ContextSample[] {
   if (samples.length === 0) return [];
-  if (!Number.isFinite(limit) || limit <= 0) return [];
-  let sum = 0;
-  let start = samples.length;
-  for (let index = samples.length - 1; index >= 0; index--) {
-    const sample = samples[index]!;
-    const value = Number.isFinite(sample.value) && sample.value > 0 ? sample.value : 0;
-    if (sum > 0 && sum + value > limit) {
-      start = index;
-      break;
-    }
-    sum += value;
-    start = index;
-  }
-  return samples.slice(start);
+  if (!Number.isFinite(count) || count <= 0) return [];
+  if (count >= samples.length) return [...samples];
+  return samples.slice(samples.length - count);
 }
 
 /**
@@ -365,7 +373,7 @@ export function windowedSamples(
  * but nothing around it is drawn anymore, so showing it would be confusing;
  * `before`/`after` on the ones that remain still come from the full series.
  */
-export function windowedCheckpoints(
+export function requestWindowCheckpoints(
   checkpoints: readonly CompactionCheckpoint[],
   windowed: readonly ContextSample[],
 ): CompactionCheckpoint[] {
@@ -373,6 +381,35 @@ export function windowedCheckpoints(
   const t0 = windowed[0]!.t;
   const t1 = windowed[windowed.length - 1]!.t;
   return checkpoints.filter((checkpoint) => checkpoint.t >= t0 && checkpoint.t <= t1);
+}
+
+/**
+ * Places each checkpoint between the two requests it falls between in the
+ * windowed series, as a fractional index (e.g. 2.5 = halfway between the
+ * 3rd and 4th request, 0-based). Used to draw checkpoints on an x axis that
+ * plots request index instead of time. A checkpoint newer than the last
+ * windowed request clamps to the last index (it just happened); checkpoints
+ * are expected to already be inside the window's time span (see
+ * `requestWindowCheckpoints`), so there is nothing older than the first
+ * sample to clamp on the low end.
+ */
+export function checkpointIndex(
+  checkpoint: CompactionCheckpoint,
+  windowed: readonly ContextSample[],
+): number {
+  const last = windowed.length - 1;
+  if (last < 0) return 0;
+  for (let index = 0; index <= last; index++) {
+    const sample = windowed[index]!;
+    if (checkpoint.t <= sample.t) {
+      if (index === 0) return 0;
+      const previous = windowed[index - 1]!;
+      const span = sample.t - previous.t;
+      const fraction = span > 0 ? (checkpoint.t - previous.t) / span : 0;
+      return index - 1 + Math.min(1, Math.max(0, fraction));
+    }
+  }
+  return last;
 }
 
 /** Round step for the context chart's y axis, in tokens. */

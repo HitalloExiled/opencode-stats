@@ -21,6 +21,16 @@
   }
 }
 
+.stats-context-requests {
+  color: var(--v2-text-text-faint, #6e6e6e);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-context-window {
+  flex-shrink: 0;
+}
+
 .stats-context-count {
   display: inline-flex;
   align-items: center;

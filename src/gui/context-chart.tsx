@@ -15,11 +15,15 @@ import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-j
 import { formatNumber, formatPercent, formatTokens } from "../format";
 import {
   areaPath,
+  checkpointIndex,
   linePath,
   maxValue,
-  normalizeSeries,
-  sampleDomain,
+  normalizeByIndex,
+  requestWindow,
+  requestWindowCheckpoints,
   tokenScale,
+  CONTEXT_WINDOW_DEFAULT,
+  CONTEXT_WINDOW_SIZES,
   type CompactionCheckpoint,
   type ContextSample,
 } from "../history";
@@ -43,18 +47,20 @@ const MIN_WIDTH = LEFT + RIGHT + 24;
 const MAX_DOTS = 120;
 
 export function ContextChart(props: {
-  /** Samples to draw; the caller applies the sliding window, if any. */
+  /**
+   * The whole session's samples; the chart applies the request-count sliding
+   * window itself (the x axis plots request index, not time, so the window
+   * is a count too — the caller does not pre-cut it).
+   */
   samples: readonly ContextSample[];
   checkpoints: readonly CompactionCheckpoint[];
   /**
-   * Session-wide total shown in the header. Computed by the caller from the
-   * full, unwindowed series, so it never changes when `samples` is cut down
-   * to the chart's sliding window.
+   * Session-wide total shown in the header. Always the full series, so it
+   * never changes when the window selector narrows what is drawn.
    */
   accumulated: number;
   /** Context window of the model, for the last-value percentage. */
   limit?: number | undefined;
-  now: number;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -74,30 +80,14 @@ export function ContextChart(props: {
     onCleanup(() => observer.disconnect());
   });
 
-  // A compaction can be newer than the last request (the marker would fall
-  // outside the edge); extend the right edge so the just-created checkpoint
-  // still shows.
-  const domain = createMemo(() => {
-    const base = sampleDomain(props.samples, props.now);
-    const latest = props.checkpoints.reduce(
-      (max, checkpoint) =>
-        Number.isFinite(checkpoint.t) && checkpoint.t > max ? checkpoint.t : max,
-      base.t1,
-    );
-    return { t0: base.t0, t1: latest > base.t0 ? latest : base.t0 + 1000 };
-  });
+  // How many requests the x axis shows; the user can widen/narrow it.
+  const [windowSize, setWindowSize] = createSignal<number>(CONTEXT_WINDOW_DEFAULT);
 
-  const visible = createMemo(() => {
-    const { t0, t1 } = domain();
-    return props.samples.filter(
-      (sample) => sample.t >= t0 && sample.t <= t1 && Number.isFinite(sample.value),
-    );
-  });
+  const visible = createMemo(() => requestWindow(props.samples, windowSize()));
+  const windowedMarks = createMemo(() => requestWindowCheckpoints(props.checkpoints, visible()));
 
   const scaleMax = createMemo(() => tokenScale(maxValue(visible()) ?? 0));
-  const points = createMemo(() =>
-    normalizeSeries(visible(), domain().t0, domain().t1, Math.max(1, scaleMax())),
-  );
+  const points = createMemo(() => normalizeByIndex(visible(), Math.max(1, scaleMax())));
 
   const line = createMemo(() => linePath(points(), pw(), PH));
   const area = createMemo(() => areaPath(points(), pw(), PH));
@@ -112,15 +102,13 @@ export function ContextChart(props: {
   });
 
   const marks = createMemo(() => {
-    const { t0, t1 } = domain();
-    const span = t1 - t0;
-    if (span <= 0) return [];
-    return props.checkpoints
-      .filter((checkpoint) => checkpoint.t >= t0 && checkpoint.t <= t1)
-      .map((checkpoint) => ({
-        checkpoint,
-        x: Math.min(1, Math.max(0, (checkpoint.t - t0) / span)),
-      }));
+    const windowed = visible();
+    const last = windowed.length - 1;
+    if (last < 0) return [];
+    return windowedMarks().map((checkpoint) => ({
+      checkpoint,
+      x: last > 0 ? Math.min(1, Math.max(0, checkpointIndex(checkpoint, windowed) / last)) : 0,
+    }));
   });
 
   const grid = createMemo(() =>
@@ -147,7 +135,11 @@ export function ContextChart(props: {
   };
 
   const ariaLabel = createMemo(
-    () => `${t("stats.contextGrowth")}: ${t("stats.checkpoints", marks().length)}`,
+    () =>
+      `${t("stats.contextGrowth")}: ${t("stats.contextRequests", visible().length)}, ${t(
+        "stats.checkpoints",
+        marks().length,
+      )}`,
   );
 
   return (
@@ -160,6 +152,23 @@ export function ContextChart(props: {
             {t("stats.contextGrowth")}
           </span>
           <span class="stats-chart-spacer" />
+          <Show when={visible().length > 0}>
+            <span class="stats-context-requests">{t("stats.contextRequests", visible().length)}</span>
+          </Show>
+          <div class="stats-token-view stats-context-window" role="group" aria-label={t("stats.contextWindowSize")}>
+            <For each={CONTEXT_WINDOW_SIZES}>
+              {(size) => (
+                <button
+                  type="button"
+                  classList={{ "is-active": windowSize() === size }}
+                  onClick={() => setWindowSize(size)}
+                  title={t("stats.contextWindowSizeOption", size)}
+                >
+                  {size}
+                </button>
+              )}
+            </For>
+          </div>
           <Show when={marks().length > 0}>
             <span class="stats-context-count">
               <span class="stats-context-count-dot" />
@@ -262,12 +271,14 @@ export function ContextChart(props: {
             </text>
           </Show>
 
-          <text class="stats-chart-axis" x={LEFT} y={H - 4} text-anchor="start">
-            {t("stats.start")}
-          </text>
-          <text class="stats-chart-axis" x={width() - RIGHT} y={H - 4} text-anchor="end">
-            {t("stats.now")}
-          </text>
+          <Show when={points().length > 0}>
+            <text class="stats-chart-axis" x={LEFT} y={H - 4} text-anchor="start">
+              {t("stats.contextFirstRequest")}
+            </text>
+            <text class="stats-chart-axis" x={width() - RIGHT} y={H - 4} text-anchor="end">
+              {t("stats.contextLastRequest")}
+            </text>
+          </Show>
         </svg>
       </div>
     </>
