@@ -168,8 +168,9 @@ classificado; documente isso se for adicionar um fallback.
   ponto por request da timeline (`input + cache.read + cache.write`) e desenha
   uma linha vertical em cada compactação `completed` — checkpoint visual, sem
   persistência. `running`/`failed` não marcam reset. O eixo em tokens usa
-  `tokenScale`; a visão é best effort para mensagens que já saíram da janela
-  viva.
+  `tokenScale`. O cabeçalho mostra o último valor e o total acumulado da sessão
+  (`accumulatedTokens`, sem reset na compactação). A visão é best effort para
+  mensagens que já saíram da janela viva.
 - Layout: use as variáveis `--v2-*` com fallback (como `notes`/`plans`) para
   funcionar nos temas claro e escuro. O bundle carrega o próprio CSS em
   `<style>`.

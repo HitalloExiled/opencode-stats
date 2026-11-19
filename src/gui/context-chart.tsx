@@ -12,8 +12,9 @@
 
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 
-import { formatPercent, formatTokens } from "../format";
+import { formatNumber, formatPercent, formatTokens } from "../format";
 import {
+  accumulatedTokens,
   areaPath,
   linePath,
   maxValue,
@@ -96,6 +97,9 @@ export function ContextChart(props: {
   const area = createMemo(() => areaPath(points(), pw(), PH));
   const last = createMemo(() => visible()[visible().length - 1]);
   const dots = createMemo(() => points().length <= MAX_DOTS);
+  // Session-wide total: it never resets at a compaction, so it measures how
+  // much context the model was sent overall.
+  const accumulated = createMemo(() => accumulatedTokens(props.samples));
 
   const lastShare = createMemo(() => {
     const limit = props.limit;
@@ -169,6 +173,14 @@ export function ContextChart(props: {
               }
             >
               {formatTokens(last()!.value, locale)} {t("stats.tokens")}
+            </span>
+          </Show>
+          <Show when={accumulated() > 0}>
+            <span
+              class="stats-context-total"
+              title={`${t("stats.contextAccumulatedHint")} · ${formatNumber(accumulated(), locale)}`}
+            >
+              {t("stats.contextAccumulated", formatTokens(accumulated(), locale))}
             </span>
           </Show>
         </div>

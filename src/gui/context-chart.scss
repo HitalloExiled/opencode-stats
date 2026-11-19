@@ -3,6 +3,11 @@
   flex-direction: column;
   gap: 6px;
   margin-top: 4px;
+
+  .stats-chart-head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
 }
 
 .stats-context-svg {
@@ -33,6 +38,12 @@
 
 .stats-context-last {
   color: var(--v2-text-text-muted, #9b9b9b);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-context-total {
+  color: var(--v2-text-text-faint, #6e6e6e);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }

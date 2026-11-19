@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import type { SessionMessageAssistant, SessionMessageInfo } from "@opencode/client";
 
 import {
+  accumulatedTokens,
   averageValue,
   chartScale,
   compactionCheckpoints,
@@ -238,6 +239,28 @@ describe("compactionCheckpoints", () => {
     expect(compactionCheckpoints(messages)).toEqual([
       { id: "only", t: 1_000, reason: "auto" },
     ]);
+  });
+});
+
+describe("accumulatedTokens", () => {
+  test("sums every request across a compaction", () => {
+    const messages: SessionMessageInfo[] = [
+      assistant({ id: "a1", created: 1_000, inputTokens: 10_000 }) as SessionMessageInfo,
+      compaction({ created: 2_000 }),
+      assistant({ id: "a2", created: 3_000, inputTokens: 2_000 }) as SessionMessageInfo,
+    ];
+    expect(accumulatedTokens(contextSamples(messages))).toBe(12_000);
+  });
+
+  test("is zero without samples and ignores invalid values", () => {
+    expect(accumulatedTokens([])).toBe(0);
+    expect(
+      accumulatedTokens([
+        { t: 1, value: 5, messageID: "a" },
+        { t: 2, value: Number.NaN, messageID: "b" },
+        { t: 3, value: 0, messageID: "c" },
+      ]),
+    ).toBe(5);
   });
 });
 

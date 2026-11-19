@@ -65,7 +65,9 @@ symlink, instala as dependências e compila o bundle da GUI.
   gráfico de linha do prompt de cada request (`input + cache.read +
   cache.write`) ao longo da timeline. Cada compactação **concluída** vira um
   checkpoint vertical, com o tamanho do contexto antes e depois no tooltip.
-  Compactações em andamento ou com falha não marcam reset. Nada é persistido.
+  Compactações em andamento ou com falha não marcam reset. O cabeçalho mostra o
+  último valor e o **total acumulado** da sessão (soma dos prompts de todos os
+  requests, sem reset na compactação). Nada é persistido.
 - **Turno atual**: duração, output, 1º token, reasoning (tokens, tempo e
   participação no output) e tool calls com status, duração e argumento resumido.
 - **Sessão**: turnos, passos, tempo médio por resposta e por turno, tok/s

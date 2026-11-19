@@ -311,6 +311,18 @@ export function compactionCheckpoints(
   return checkpoints.sort((a, b) => a.t - b.t || a.id.localeCompare(b.id));
 }
 
+/**
+ * Sum of every request's prompt in the timeline. Compactions reset the series
+ * but not this total: it is how much context the model was sent overall.
+ */
+export function accumulatedTokens(samples: readonly ContextSample[]): number {
+  let total = 0;
+  for (const sample of samples) {
+    if (Number.isFinite(sample.value) && sample.value > 0) total += sample.value;
+  }
+  return total;
+}
+
 /** Round step for the context chart's y axis, in tokens. */
 const TOKEN_STEPS = [
   1_000,
