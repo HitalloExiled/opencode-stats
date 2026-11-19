@@ -36,12 +36,15 @@ import {
   type ToolCall,
 } from "../metrics";
 import {
+  accumulatedTokens,
   compactionCheckpoints,
   contextSamples,
   createRingBuffer,
   niceScale,
   samplesForTurn,
   stepSamples,
+  windowedCheckpoints,
+  windowedSamples,
   type RateSample,
 } from "../history";
 import { RateChart, type ChartRange } from "./chart";
@@ -143,9 +146,16 @@ export function StatsView(props: { session: MountedSession }) {
   const activeMetrics = createMemo(() => analyzeSession(messages()));
   const sessionSamples = createMemo(() => stepSamples(timeline()));
   // Context growth spans the whole timeline; completed compactions are drawn
-  // as checkpoints where the prompt size drops.
+  // as checkpoints where the prompt size drops. The accumulated total always
+  // covers the full session, while the chart itself only draws a 1M token
+  // sliding window so it stays readable on long sessions.
   const contextSeries = createMemo(() => contextSamples(timeline()));
   const contextMarks = createMemo(() => compactionCheckpoints(timeline(), contextSeries()));
+  const contextWindowSeries = createMemo(() => windowedSamples(contextSeries()));
+  const contextWindowMarks = createMemo(() =>
+    windowedCheckpoints(contextMarks(), contextWindowSeries()),
+  );
+  const contextAccumulated = createMemo(() => accumulatedTokens(contextSeries()));
 
   let buffer = createRingBuffer(300);
   const [liveSamples, setLiveSamples] = createSignal<RateSample[]>([]);
@@ -929,8 +939,9 @@ export function StatsView(props: { session: MountedSession }) {
           </div>
 
           <ContextChart
-            samples={contextSeries()}
-            checkpoints={contextMarks()}
+            samples={contextWindowSeries()}
+            checkpoints={contextWindowMarks()}
+            accumulated={contextAccumulated()}
             limit={contextLimit()}
             now={now()}
           />

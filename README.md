@@ -67,7 +67,10 @@ symlink, instala as dependências e compila o bundle da GUI.
   checkpoint vertical, com o tamanho do contexto antes e depois no tooltip.
   Compactações em andamento ou com falha não marcam reset. O cabeçalho mostra o
   último valor e o **total acumulado** da sessão (soma dos prompts de todos os
-  requests, sem reset na compactação). Nada é persistido.
+  requests, sem reset na compactação). O gráfico em si mostra uma **janela
+  deslizante dos últimos 1.000.000 tokens** acumulados: pontos mais antigos
+  saem do desenho (mas continuam contando no acumulado do cabeçalho); sessões
+  abaixo de 1M mostram tudo. Nada é persistido.
 - **Turno atual**: duração, output, 1º token, reasoning (tokens, tempo e
   participação no output) e tool calls com status, duração e argumento resumido.
 - **Sessão**: turnos, passos, tempo médio por resposta e por turno, tok/s

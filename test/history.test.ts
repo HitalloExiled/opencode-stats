@@ -20,6 +20,10 @@ import {
   samplesForTurn,
   stepSamples,
   tokenScale,
+  windowedCheckpoints,
+  windowedSamples,
+  type CompactionCheckpoint,
+  type ContextSample,
   type RateSample,
 } from "../src/history";
 import type { Turn } from "../src/metrics";
@@ -273,5 +277,59 @@ describe("tokenScale", () => {
 
   test("keeps round millions above the table", () => {
     expect(tokenScale(2_100_000)).toBe(3_000_000);
+  });
+});
+
+describe("windowedSamples", () => {
+  const points = (values: number[]): ContextSample[] =>
+    values.map((value, index) => ({ t: index + 1, value, messageID: `m${index + 1}` }));
+
+  test("keeps everything when the total is under the limit", () => {
+    const samples = points([100, 200, 300]);
+    expect(windowedSamples(samples, 1_000)).toEqual(samples);
+  });
+
+  test("keeps only the most recent tail that fits the limit", () => {
+    const samples = points([100, 100, 100, 100]);
+    expect(windowedSamples(samples, 250)).toEqual(samples.slice(1));
+  });
+
+  test("includes the boundary sample that crosses the limit", () => {
+    const samples = points([900_000, 50_000]);
+    const result = windowedSamples(samples, 100_000);
+    // The newest sample alone (50_000) is under the limit; adding the next
+    // one (900_000) would cross it, so it is included as the boundary and
+    // nothing else fits.
+    expect(result).toEqual(samples);
+  });
+
+  test("returns an empty array for an empty input", () => {
+    expect(windowedSamples([], 1_000_000)).toEqual([]);
+  });
+
+  test("defaults to the 1M token ceiling", () => {
+    const samples = points([2_000_000]);
+    expect(windowedSamples(samples)).toEqual(samples);
+  });
+});
+
+describe("windowedCheckpoints", () => {
+  const checkpoint = (id: string, t: number): CompactionCheckpoint => ({
+    id,
+    t,
+    reason: "auto",
+  });
+
+  test("drops checkpoints outside the windowed span", () => {
+    const windowed: ContextSample[] = [
+      { t: 10, value: 1, messageID: "a" },
+      { t: 30, value: 1, messageID: "b" },
+    ];
+    const checkpoints = [checkpoint("old", 5), checkpoint("in", 20), checkpoint("new", 40)];
+    expect(windowedCheckpoints(checkpoints, windowed)).toEqual([checkpoint("in", 20)]);
+  });
+
+  test("returns nothing when the window is empty", () => {
+    expect(windowedCheckpoints([checkpoint("x", 1)], [])).toEqual([]);
   });
 });

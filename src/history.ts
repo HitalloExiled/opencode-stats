@@ -323,6 +323,58 @@ export function accumulatedTokens(samples: readonly ContextSample[]): number {
   return total;
 }
 
+/**
+ * Fixed ceiling for the chart's sliding window, in tokens. The chart only
+ * draws the most recent samples whose prompts sum to at most this many
+ * tokens; the session-wide total (`accumulatedTokens`) is unaffected.
+ */
+export const CONTEXT_WINDOW_TOKENS = 1_000_000;
+
+/**
+ * Keeps only the most recent samples whose prompt sizes sum to at most
+ * `limit` tokens. Walks from the newest sample backwards, including samples
+ * until adding one more would exceed the limit; that boundary sample is kept
+ * even if it alone pushes the running sum over the limit, so a single huge
+ * prompt still shows up instead of leaving the window empty. Below the
+ * limit, every sample is kept (same order as the input).
+ */
+export function windowedSamples(
+  samples: readonly ContextSample[],
+  limit: number = CONTEXT_WINDOW_TOKENS,
+): ContextSample[] {
+  if (samples.length === 0) return [];
+  if (!Number.isFinite(limit) || limit <= 0) return [];
+  let sum = 0;
+  let start = samples.length;
+  for (let index = samples.length - 1; index >= 0; index--) {
+    const sample = samples[index]!;
+    const value = Number.isFinite(sample.value) && sample.value > 0 ? sample.value : 0;
+    if (sum > 0 && sum + value > limit) {
+      start = index;
+      break;
+    }
+    sum += value;
+    start = index;
+  }
+  return samples.slice(start);
+}
+
+/**
+ * Keeps only the checkpoints that fall within the time span of the windowed
+ * samples. A checkpoint older than the window is still real (it happened),
+ * but nothing around it is drawn anymore, so showing it would be confusing;
+ * `before`/`after` on the ones that remain still come from the full series.
+ */
+export function windowedCheckpoints(
+  checkpoints: readonly CompactionCheckpoint[],
+  windowed: readonly ContextSample[],
+): CompactionCheckpoint[] {
+  if (windowed.length === 0) return [];
+  const t0 = windowed[0]!.t;
+  const t1 = windowed[windowed.length - 1]!.t;
+  return checkpoints.filter((checkpoint) => checkpoint.t >= t0 && checkpoint.t <= t1);
+}
+
 /** Round step for the context chart's y axis, in tokens. */
 const TOKEN_STEPS = [
   1_000,

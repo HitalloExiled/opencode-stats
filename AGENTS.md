@@ -169,8 +169,14 @@ classificado; documente isso se for adicionar um fallback.
   uma linha vertical em cada compactação `completed` — checkpoint visual, sem
   persistência. `running`/`failed` não marcam reset. O eixo em tokens usa
   `tokenScale`. O cabeçalho mostra o último valor e o total acumulado da sessão
-  (`accumulatedTokens`, sem reset na compactação). A visão é best effort para
-  mensagens que já saíram da janela viva.
+  (`accumulatedTokens`, sem reset na compactação, sempre calculado sobre a
+  série completa). O gráfico em si desenha só uma **janela deslizante de 1M
+  tokens** (`windowedSamples`/`windowedCheckpoints`, teto `CONTEXT_WINDOW_TOKENS`):
+  `stats.tsx` recorta a série e os checkpoints antes de passar para
+  `<ContextChart>`, que recebe `samples` (já recortado) e `accumulated` (número
+  pronto, da série completa) como props separadas — nunca deriva o acumulado da
+  prop `samples`. A visão é best effort para mensagens que já saíram da janela
+  viva.
 - Layout: use as variáveis `--v2-*` com fallback (como `notes`/`plans`) para
   funcionar nos temas claro e escuro. O bundle carrega o próprio CSS em
   `<style>`.
