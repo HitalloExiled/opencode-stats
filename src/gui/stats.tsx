@@ -47,6 +47,7 @@ import {
 } from "../history";
 import { RateChart, type ChartRange } from "./chart";
 import { ContextChart } from "./context-chart";
+import { CostChart } from "./cost-chart";
 import { Gauge } from "./gauge";
 import { useLocale, useT } from "./i18n";
 import { StatsRpc, type PromptCapture } from "./contract";
@@ -1138,6 +1139,11 @@ export function StatsView(props: { session: MountedSession }) {
             </div>
           </Show>
         </section>
+
+        <CostChart
+          client={session.server.client}
+          active={enabled() && !observability.hidden() && panel.visible()}
+        />
 
         <div class="stats-note">
           <Icon path={INFO} size={11} />

@@ -13,7 +13,7 @@ npm run typecheck          # tsc --noEmit (index.ts + src/**/*.ts)
 npm run typecheck:gui      # tsc --noEmit -p tsconfig.gui.json
 npm run gui:build          # vite build -> dist/gui-experimental.cjs
 npm run gui:watch          # rebuild contínuo
-bun test test              # testes puros (metrics/history/chart/prompt/capture/scheduler/observability/rpc)
+bun test test              # testes puros (metrics/history/chart/cost/prompt/capture/scheduler/observability/rpc)
 ```
 
 No repo pai (`opencode-tools`):
@@ -62,6 +62,9 @@ src/
     gauge.tsx            # gauge SVG semicircular
     chart.tsx            # gráfico de linha/área SVG
     context-chart.tsx    # crescimento do contexto + checkpoints
+    cost-chart.tsx       # custo por provider + projeção + limite
+    cost-source.ts       # custo por fatia/provider via session.stats + cache
+    cost-settings.ts     # limite, já gasto e janela persistidos (global)
     header.tsx           # Slot session.header
     i18n.ts              # PT-BR + EN-US
 test/                    # bun:test das funções puras
@@ -151,7 +154,48 @@ classificado; documente isso se for adicionar um fallback.
   - prompt: `client.rpc(StatsRpc).systemPrompt({ sessionID, ifNoneMatch }, ...)`
     com `{ location: { directory: session.directory } }`; trate os três
     `status` (`missing`/`unchanged`/`capture`);
-  - interruptor: `observability()` / `setObservability({ enabled })`.
+  - interruptor: `observability()` / `setObservability({ enabled })`;
+  - custo por provider: `client.session.stats({ from, to, timezone, tools:
+    "none" })` **uma vez por fatia do eixo** (dia local inteiro, o trecho do
+    marco zero até o fim do dia, ou o início de hoje até agora), de
+    `src/gui/cost-source.ts`. Sem `project`, a chamada agrega a **máquina
+    inteira** (validado contra o servidor: a soma por projeto bate com a chamada
+    sem filtro) e `models[]` traz `model.providerID` + `cost`. Nunca leia
+    `opencode.db`. Fatias encerradas antes de hoje ficam em cache permanente; a
+    que alcança hoje expira em `COST_TODAY_TTL_MS` (~30 s); o cache é um LRU de
+    128 chaves `from|to`, independente do provider e do marco zero (o custo de
+    uma fatia não muda com o baseline), limpo no refresh;
+    concorrência limitada a 4 e abort cooperativo (o signal só é checado entre
+    chamadas porque o typecheck do servidor não tem DOM).
+- `src/gui/cost-chart.tsx` desenha o card **Custo e projeção** (depois de
+  **Sessão**): eixo X em tempo (não índice), eixo Y em USD, linha real
+  acumulada e projeção tracejada com inclinação = custo médio diário
+  (`src/cost.ts`, puro), linha de corte no **Limite** e marcador/data no
+  cruzamento. A janela (10/15/30 dias), o limite e o **Já gasto** ficam em
+  `src/gui/cost-settings.ts`, um store **global** (`ctx.storage.store`) com um
+  registro por provider. O `costSettingsFor` mantém uma cópia **autoritativa**
+  em `createSignal` e escreve no store com `set(...)` (valor inteiro, não
+  `update` aninhado): o `.value` do store não re-renderizava os memos depois de
+  um `update`, então digitar um limite novo não chegava ao gráfico. A semeadura
+  do store só acontece uma vez, quando `ready()` fica verdadeiro, e nunca
+  sobrescreve uma edição feita antes.
+  **Já gasto é um marco zero:** ao editar o campo (valor diferente do atual) o
+  settings carimba `spentAt = agora`; o card conta o custo medido **a partir
+  desse instante**, não a janela inteira. `costRanges(now, janela, spentAt)`
+  devolve o eixo começando no marco (ou no início da janela, quando o marco é
+  mais antigo, com o gasto intermediário num `offset` somado ao baseline). A
+  média divide pelo tempo decorrido desde o marco (piso de 1 dia); sem marco,
+  divide pela janela. O cruzamento do limite parte de `baseline + total`.
+  Cada tecla em `Já gasto` carimba um marco novo: o reload é debounced em
+  `COST_MARK_DEBOUNCE_MS` (~300 ms) e aborta o anterior, enquanto janela,
+  provider e refresh carregam na hora. O cache de fatias **não** é limpo pelo
+  marco: o custo de um intervalo não depende do baseline.
+  O SVG é medido **no próprio `<section class="stats-card">`**, que é sempre
+  renderizado — nunca dentro do `<Show when={provider()}>` condicional, senão o
+  `ResizeObserver` montado no `onMount` não acha o host (os dados chegam depois)
+  e o SVG de 360 px é esticado até a largura do card por
+  `preserveAspectRatio="none"`. O fetch só roda com o painel visível e a
+  observabilidade ligada; o botão de refresh limpa o cache.
 - `src/gui/observability.ts` guarda o status do interruptor em um signal de
   módulo, compartilhado por `StatsView`, `StatsStrip` e `PromptView` (o estado é
   global ao processo). Não mantenha cópia local em cada componente.

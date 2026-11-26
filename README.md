@@ -85,6 +85,27 @@ symlink, instala as dependências e compila o bundle da GUI.
   (todos os passos desde a última compactação: input, ferramentas estimadas,
   output, reasoning e cache) —, custo, taxa de sucesso e ranking de ferramentas,
   além de passos/tokens por modelo.
+- **Custo e projeção**: card próprio depois de **Sessão**, no escopo da
+  **máquina inteira** (não só da sessão aberta), com um **seletor de provider**
+  (um por vez; a lista vem do custo do intervalo). O eixo X é tempo e o eixo Y é
+  USD acumulado. **Já gasto é um marco zero**: ao informar o campo, o card
+  carimba o instante e passa a somar a esse valor apenas o custo medido **dali
+  em diante** — por isso editar o campo reinicia a contagem, e um valor antigo
+  não infla o "custo atual" com histórico. O eixo começa no marco (ou no início
+  da janela de **10/15/30 dias**, quando o marco é mais antigo; o gasto
+  intermediário entra como offset para não fazer degrau). A **projeção** parte
+  de hoje com inclinação igual ao **custo médio diário** desde o marco (piso de
+  1 dia; sem marco, a média é da janela). Os campos **Limite** e **Já gasto** são
+  por provider e ficam no storage **global** da GUI (sobrevivem a reload) e valem
+  na hora: o card guarda uma cópia local autoritativa e persiste o valor inteiro
+  a cada edição. Com limite, a linha de corte horizontal cruza a projeção e o
+  card mostra a **data em que o limite será atingido** (ou "limite já atingido" /
+  "não atinge em 1 ano"); sem limite, não há corte e a projeção vai até hoje + N
+  dias. O SVG é redesenhado na largura medida do card (sem esticar) e acompanha o
+  redimensionamento da janela. Os dados vêm de `session.stats` em **fatias do
+  eixo** (dia local, ou do marco até agora), sem `project`, o que agrega a
+  máquina — nunca do banco do app; fatias passadas ficam em cache e a que toca
+  hoje expira em ~30 s. Inclui subagentes.
 
 O tok/s usa a mesma fórmula do rodapé do TUI: `(output + reasoning) /
 (streamed - created)` por passo, agregado antes de dividir. O tempo de
@@ -229,6 +250,7 @@ src/
   runtime.ts             # store/scheduler/observability globais
   metrics.ts             # turnos, tok/s, durações, reasoning, tools, totais
   history.ts             # ring buffer, escala, paths do gráfico (puro)
+  cost.ts                # janela de dias, série acumulada, projeção, corte (puro)
   format.ts              # duração, tokens, taxa, bytes
   gui.tsx                # entrada ./gui-experimental
   gui/
@@ -240,6 +262,9 @@ src/
     gauge.tsx            # gauge SVG
     chart.tsx            # gráfico de linha SVG
     context-chart.tsx    # crescimento do contexto + checkpoints
+    cost-chart.tsx       # custo por provider + projeção + limite
+    cost-source.ts       # custo por fatia/provider via session.stats + cache
+    cost-settings.ts     # limite, já gasto e janela persistidos (global)
     header.tsx           # faixa do cabeçalho
     i18n.ts              # PT-BR + EN-US (fallback EN-US)
 test/                    # bun test das funções puras
