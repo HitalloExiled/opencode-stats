@@ -87,25 +87,52 @@ symlink, instala as dependências e compila o bundle da GUI.
   além de passos/tokens por modelo.
 - **Custo e projeção**: card próprio depois de **Sessão**, no escopo da
   **máquina inteira** (não só da sessão aberta), com um **seletor de provider**
-  (um por vez; a lista vem do custo do intervalo). O eixo X é tempo e o eixo Y é
-  USD acumulado. **Já gasto é um marco zero**: ao informar o campo, o card
-  carimba o instante e passa a somar a esse valor apenas o custo medido **dali
-  em diante** — por isso editar o campo reinicia a contagem, e um valor antigo
-  não infla o "custo atual" com histórico. O eixo começa no marco (ou no início
-  da janela de **10/15/30 dias**, quando o marco é mais antigo; o gasto
-  intermediário entra como offset para não fazer degrau). A **projeção** parte
-  de hoje com inclinação igual ao **custo médio diário** desde o marco (piso de
-  1 dia; sem marco, a média é da janela). Os campos **Limite** e **Já gasto** são
-  por provider e ficam no storage **global** da GUI (sobrevivem a reload) e valem
-  na hora: o card guarda uma cópia local autoritativa e persiste o valor inteiro
-  a cada edição. Com limite, a linha de corte horizontal cruza a projeção e o
-  card mostra a **data em que o limite será atingido** (ou "limite já atingido" /
-  "não atinge em 1 ano"); sem limite, não há corte e a projeção vai até hoje + N
-  dias. O SVG é redesenhado na largura medida do card (sem esticar) e acompanha o
-  redimensionamento da janela. Os dados vêm de `session.stats` em **fatias do
-  eixo** (dia local, ou do marco até agora), sem `project`, o que agrega a
-  máquina — nunca do banco do app; fatias passadas ficam em cache e a que toca
-  hoje expira em ~30 s. Inclui subagentes.
+  (um por vez; a lista vem do custo do intervalo). Um único campo manual,
+  **Última recarga**, ancora o ciclo: o eixo começa nela (limitado a 90 dias,
+  com aviso quando a recarga é mais antiga) e mede o custo acumulado dali até
+  agora; sem recarga, cai no marco legado de **Já gasto** ou no início da
+  janela. **Já gasto** é o **total gasto no ciclo** (no instante da recarga,
+  normalmente 0). Sem recarga e sem valor anterior o número digitado é o total
+  **agora** e entra como um degrau sobre a janela medida — não carimba um marco
+  novo em cima do save, que esconderia todo o histórico anterior. Com um marco
+  existente, editar **não** move o marco nem descarta o histórico — o valor
+  digitado é o total corrente, gravado como um degrau assinado no instante do
+  save, então o card pousa exatamente nele. Ajustes antigos gravados antes de o
+  degrau registrar o valor desenhado (`seen`) são descartados no próximo save:
+  o total final não muda (`spent + medido`), mas a curva deixa de mostrar os
+  degraus artificiais. Valores aceitam até **4 casas
+  decimais**. Todos os
+  campos editáveis (**Limite**, **Já gasto**, **Última recarga** e a **janela**)
+  ficam numa **modal `Configurar custo`**: digitar não grava nada, `Salvar`
+  valida tudo de uma vez (valor `12,50`/`12.50`/`R$`; data `dd/mm`,
+  `dd/mm/aaaa` ou ISO, sem data no futuro) e só então faz um **único write**; se
+  algum campo falhar, nada é persistido, a modal continua aberta e o foco vai
+  para o primeiro inválido. A data usa o `DateInput` do shared (`os-date`).
+  **Repus créditos** abre a mesma modal com a recarga preenchida com agora. O eixo X é
+  tempo: o primeiro checkpoint é **hoje**, depois um a cada **10 dias** e o
+  último é a **data do hit** (o cruzamento do limite), em destaque mesmo quando
+  cai na projeção; cada um tem um guia vertical tracejado no plot e, em colisão,
+  o hit vence hoje. O eixo Y é **% do limite** quando há limite
+  positivo (0/50/100/150, com a linha de 100%) ou **USD acumulado** quando não
+  há. A **projeção** parte de hoje com inclinação igual ao **custo médio diário
+  medido** desde o início do eixo (piso de 1 dia) — edições externas não inflam
+  a média — e vai até o **cruzamento do limite** (+3 dias, teto de 90) ou, sem
+  cruzamento, até hoje + 30 dias. O rodapé mostra a **média %/dia**, a legenda
+  Uso/Forecast/Limite e o resumo dos valores configurados, com as ações
+  **Configurar** e **Repus créditos**. O SVG é redesenhado na largura medida do
+  card (sem esticar) e acompanha o redimensionamento da janela. Os dados vêm de
+  `session.stats` em **fatias do eixo** (dia local, ou do início do ciclo até
+  agora), sem `project`, o que agrega a máquina — nunca do banco do app; fatias
+  passadas ficam em cache e a que toca hoje expira em ~30 s. Inclui subagentes.
+  Opcionalmente o card lê o **gasto real da chave** no gateway do provider
+  (LiteLLM `GET /key/info`, base URL de `settings.baseURL` do provider): a chave
+  é digitada na modal (campo senha), fica **no servidor do plugin** e nunca volta
+  para a GUI; em branco mantém a atual e **Remover chave** limpa. Com o gateway
+  conectado, o total vem de `spend − base` (a base é o spend capturado no
+  **Repus créditos**) e o limite de `max_budget − base`, reiniciando sozinho
+  quando `budget_reset_at` muda; **Já gasto** fica desabilitado e a média/
+  projeção continuam sobre o custo medido. Sem chave, nada muda; uma falha do
+  gateway cai no modo manual com um aviso discreto.
 
 O tok/s usa a mesma fórmula do rodapé do TUI: `(output + reasoning) /
 (streamed - created)` por passo, agregado antes de dividir. O tempo de
@@ -166,7 +193,9 @@ O plugin tem duas partes:
   coalescência, lag e tempo de processamento. A última captura de cada sessão
   fica em memória (hash, agente, modelo, `capturedAt` e contador de requests) e
   é servida pela RPC `systemPrompt`, que aceita `ifNoneMatch` para não reenviar
-  o payload quando o hash não mudou.
+  o payload quando o hash não mudou. A mesma RPC serve o **gateway do custo**
+  (`gateway`/`setGatewayKey`/`clearGatewayKey`): o servidor detém a chave em
+  `ctx.storage` e consulta `GET {baseURL}/key/info`, devolvendo só o spend.
 - **GUI** (`src/gui.tsx`): calcula métricas e histórico a partir de
   `session.server.data` e desenha o gauge/gráfico em SVG, sem biblioteca de
   charts. As métricas usam **dois recortes**:
@@ -252,6 +281,7 @@ src/
   history.ts             # ring buffer, escala, paths do gráfico (puro)
   cost.ts                # janela de dias, série acumulada, projeção, corte (puro)
   format.ts              # duração, tokens, taxa, bytes
+  gateway.ts             # gasto da chave no gateway LiteLLM (só servidor)
   gui.tsx                # entrada ./gui-experimental
   gui/
     contract.ts          # RPC compartilhada

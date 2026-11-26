@@ -21,6 +21,7 @@ import type {
   SessionContext,
 } from "@opencode/plugin/promise/session";
 
+import { createGateway } from "./src/gateway.js";
 import { StatsRpc } from "./src/gui/contract.js";
 import { createRpcHandlers } from "./src/rpc.js";
 import { statsRuntime } from "./src/runtime.js";
@@ -74,6 +75,14 @@ export default Plugin.define({
       console.error(`[stats] could not read observability: ${errorText(error)}`);
     });
 
+    // The gateway key lives in this plugin's server storage; the window only
+    // ever sees the spend, never the key.
+    const gateway = createGateway({
+      storage: ctx.storage,
+      providers: ctx.provider,
+      directory: ctx.location.directory,
+    });
+
     const registrations = await Promise.all([
       ctx.session.hook("context", capture),
       ctx.session.hook("compaction", (event: SessionCompaction) => {
@@ -82,7 +91,7 @@ export default Plugin.define({
         if (event.result) return;
         capture(event);
       }),
-      ctx.rpc.register(StatsRpc, createRpcHandlers(runtime)),
+      ctx.rpc.register(StatsRpc, createRpcHandlers(runtime, gateway)),
     ]);
 
     return async () => {

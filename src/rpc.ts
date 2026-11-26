@@ -1,9 +1,10 @@
 /**
  * Server-side RPC handlers for the Stats panel.
  *
- * Only the system prompt and the observability switch cross the RPC: the
- * composed prompt is built by the server and cannot be reconstructed in the
- * window, and the switch has to gate the server hook. All metrics stay in the
+ * The system prompt, the observability switch and the cost gateway cross the
+ * RPC: the composed prompt is built by the server and cannot be reconstructed
+ * in the window, the switch has to gate the server hook, and the gateway key is
+ * stored on the server and never returns to the window. All metrics stay in the
  * window.
  */
 
@@ -14,6 +15,7 @@ import {
   type ObservabilityStatus,
   type PromptResult,
 } from "./gui/contract.js";
+import type { Gateway } from "./gateway.js";
 import type { StatsRuntime } from "./runtime.js";
 
 function status(runtime: StatsRuntime): ObservabilityStatus {
@@ -33,7 +35,10 @@ function status(runtime: StatsRuntime): ObservabilityStatus {
   };
 }
 
-export function createRpcHandlers(runtime: StatsRuntime): RpcHandlers<typeof StatsRpc> {
+export function createRpcHandlers(
+  runtime: StatsRuntime,
+  gateway: Gateway,
+): RpcHandlers<typeof StatsRpc> {
   return {
     systemPrompt: async (input): Promise<PromptResult> => {
       const sessionID = String(input.sessionID);
@@ -58,5 +63,9 @@ export function createRpcHandlers(runtime: StatsRuntime): RpcHandlers<typeof Sta
       await runtime.observability.setEnabled(Boolean(input.enabled));
       return status(runtime);
     },
+    gateway: async (input) => gateway.query(String(input.providerID)),
+    setGatewayKey: async (input) =>
+      gateway.setKey(String(input.providerID), String(input.key)),
+    clearGatewayKey: async (input) => gateway.clearKey(String(input.providerID)),
   };
 }

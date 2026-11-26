@@ -1,7 +1,3 @@
-.stats-cost-window {
-  flex-shrink: 0;
-}
-
 .stats-cost-select {
   appearance: none;
   border: 1px solid var(--v2-border-border-muted, #2c2c2c);
@@ -26,54 +22,77 @@
   }
 }
 
-.stats-cost-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.stats-cost-field {
+/* Custo atual + limite + previsão numa linha só, como o cabeçalho da referência. */
+.stats-cost-kpi {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-
-  > span {
-    color: var(--v2-text-text-faint, #6e6e6e);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-  }
-}
-
-.stats-cost-summary {
-  display: flex;
+  align-items: baseline;
   flex-wrap: wrap;
-  gap: 6px 16px;
+  gap: 6px;
+  min-width: 0;
 }
 
-.stats-cost-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-
-  b {
-    color: var(--v2-text-text-base, #e8e8e8);
-    font-weight: 650;
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-
-    &.is-warn {
-      color: var(--stats-tools);
-    }
-  }
-}
-
-.stats-cost-stat-key {
+.stats-cost-kpi-key {
   color: var(--v2-text-text-faint, #6e6e6e);
   font-size: 9px;
-  letter-spacing: 0.4px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
+}
+
+.stats-cost-kpi-value {
+  color: var(--v2-text-text-base, #e8e8e8);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+
+  &.is-warn {
+    color: var(--stats-tools);
+  }
+}
+
+.stats-cost-kpi-meta {
+  color: var(--v2-text-text-muted, #9b9b9b);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-cost-kpi-status {
+  color: var(--v2-text-text-muted, #9b9b9b);
+  font-size: 10px;
+
+  &.is-warn {
+    color: var(--stats-tools);
+  }
+}
+
+/* Configured values as a read-only recap, with the two actions on the same row. */
+.stats-cost-fields {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stats-cost-field-value {
+  color: var(--v2-text-text-faint, #6e6e6e);
+  font-size: 9.5px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.stats-cost-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.stats-note.is-warn {
+  color: var(--v2-state-fg-warning);
 }
 
 .stats-cost-chart {
@@ -83,42 +102,64 @@
 }
 
 .stats-cost-svg {
-  height: 150px;
+  height: 164px;
 }
 
 .stats-cost-line {
   fill: none;
-  stroke: var(--stats-input, #4b7cc9);
-  stroke-width: 1.8;
+  stroke: var(--stats-output);
+  stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 
+/* The gradient (a <linearGradient> per card) carries the fill; only the stroke
+   has to be cleared here, otherwise the class would override the attribute. */
 .stats-cost-area {
-  fill: var(--stats-input, #4b7cc9);
-  fill-opacity: 0.12;
   stroke: none;
 }
 
-.stats-cost-dot {
-  fill: var(--stats-input, #4b7cc9);
-  stroke: var(--v2-background-bg-layer-02, #1a1a1a);
+.stats-cost-area-stop {
+  stop-color: var(--stats-output);
+}
+
+.stats-cost-hatch {
+  opacity: 0.55;
+}
+
+.stats-cost-hatch-line {
+  stroke: var(--v2-border-border-muted, #2c2c2c);
   stroke-width: 1;
 }
 
 .stats-cost-projection {
   fill: none;
-  stroke: var(--stats-reason, #b49cff);
-  stroke-width: 1.6;
-  stroke-dasharray: 4 3;
+  stroke: var(--stats-output);
+  stroke: color-mix(in srgb, var(--stats-output) 55%, var(--v2-state-fg-warning));
+  stroke-width: 1.8;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 
+.stats-cost-end-dot {
+  fill: var(--stats-output);
+  fill: color-mix(in srgb, var(--stats-output) 45%, var(--v2-state-fg-warning));
+  stroke: var(--v2-background-bg-layer-02, #1a1a1a);
+  stroke-width: 1.2;
+}
+
+.stats-cost-end-label {
+  fill: var(--v2-text-text-base, #e8e8e8);
+  font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 9px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
 .stats-cost-cutoff {
-  stroke: var(--stats-tools);
+  stroke: var(--v2-text-text-faint, #6e6e6e);
   stroke-width: 1;
-  stroke-dasharray: 5 3;
+  stroke-dasharray: 5 4;
 }
 
 .stats-cost-cutoff-label {
@@ -127,10 +168,17 @@
   font-size: 8px;
 }
 
-.stats-cost-today {
-  stroke: var(--v2-text-text-faint, #6e6e6e);
+.stats-cost-checkpoint {
+  stroke: var(--v2-border-border-muted, #2c2c2c);
   stroke-width: 1;
   stroke-dasharray: 2 4;
+  stroke-opacity: 0.6;
+}
+
+/* Boundary between measured usage and forecast. */
+.stats-cost-now {
+  stroke: var(--v2-border-border-muted, #2c2c2c);
+  stroke-width: 1;
 }
 
 .stats-cost-crossing {
@@ -146,8 +194,78 @@
   stroke-width: 1.2;
 }
 
-.stats-cost-crossing-label {
-  fill: var(--stats-tools);
-  font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-  font-size: 8px;
+/* Date strip under the plot, like the reference. */
+.stats-cost-axis-band {
+  fill: var(--v2-background-bg-layer-03, #2a2a2a);
+  opacity: 0.5;
+}
+
+.stats-cost-tick {
+  fill: var(--v2-text-text-faint, #6e6e6e);
+
+  &.is-current {
+    fill: var(--v2-text-text-base, #e8e8e8);
+    font-weight: 700;
+  }
+
+  /* The date the budget ends: same accent as the crossing line. */
+  &.is-hit {
+    fill: var(--stats-tools);
+    font-weight: 700;
+  }
+}
+
+.stats-cost-tick-pill {
+  fill: var(--v2-background-bg-layer-03, #2a2a2a);
+
+  &.is-hit {
+    fill: var(--stats-tools);
+    fill-opacity: 0.16;
+  }
+}
+
+.stats-cost-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stats-cost-average {
+  color: var(--v2-text-text-muted, #9b9b9b);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-cost-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.stats-cost-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--v2-text-text-muted, #9b9b9b);
+  font-size: 9px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.stats-cost-swatch {
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--stats-output);
+
+  &.is-forecast {
+    background: var(--stats-output);
+    background: color-mix(in srgb, var(--stats-output) 55%, var(--v2-state-fg-warning));
+  }
+
+  &.is-limit {
+    background: var(--v2-text-text-faint, #6e6e6e);
+  }
 }

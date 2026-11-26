@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { createCaptureStore } from "../src/capture";
+import type { Gateway } from "../src/gateway";
 import { createObservability, type ObservabilityStorage } from "../src/observability";
 import type { CaptureInput } from "../src/prompt";
 import { createRpcHandlers } from "../src/rpc";
@@ -46,7 +47,15 @@ function setup(initial?: boolean) {
     observability,
     bindStorage: async () => undefined,
   } as StatsRuntime;
-  const handlers = createRpcHandlers(runtime) as unknown as {
+  const gateway: Gateway = {
+    query: async () => ({ status: "missingKey", hasKey: false }),
+    setKey: async () => ({
+      status: "missingKey",
+      info: { status: "missingKey", hasKey: false },
+    }),
+    clearKey: async () => ({ status: "missingKey", hasKey: false }),
+  };
+  const handlers = createRpcHandlers(runtime, gateway) as unknown as {
     [K in keyof ReturnType<typeof createRpcHandlers>]: Unary<
       ReturnType<typeof createRpcHandlers>[K]
     >;
@@ -82,6 +91,19 @@ describe("stats RPC handlers", () => {
     const back = await handlers.setObservability({ enabled: true });
     expect(back.enabled).toBe(true);
     expect(values.get("observability")).toBe(true);
+  });
+
+  test("gateway delegates to the service", async () => {
+    const { handlers } = setup();
+
+    expect(await handlers.gateway({ providerID: "insi" })).toEqual({
+      status: "missingKey",
+      hasKey: false,
+    });
+    expect(await handlers.clearGatewayKey({ providerID: "insi" })).toEqual({
+      status: "missingKey",
+      hasKey: false,
+    });
   });
 
   test("systemPrompt reports a missing capture", async () => {

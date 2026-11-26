@@ -1,9 +1,10 @@
 /**
  * Stats server/GUI contract.
  *
- * The window talks to the server plugin over RPC only for the system prompt:
- * the composed prompt exists only inside the server's session context hook, so
- * the server captures it per session and serves the last capture here.
+ * The window talks to the server plugin over RPC for the system prompt and for
+ * the cost gateway: the composed prompt exists only inside the server's session
+ * context hook, and the gateway key is stored on the server and never returns
+ * to the window (only the spend it exposes does).
  *
  * Metrics and rate history are computed in the window from
  * `session.server.data`; they do not cross this contract.
@@ -84,6 +85,45 @@ export type ObservabilityStatus = {
   maxLagMs: number;
   lastProcessMs: number;
   maxProcessMs: number;
+};
+
+/**
+ * The key's spend as the gateway reports it.
+ *
+ * `status:"ok"` is the only one that carries numbers; `missingKey` is the
+ * normal "not configured" state and `error` means the gateway could not be
+ * read (no base URL, a rejected key, a network failure). The key itself never
+ * appears here: it lives on the server only.
+ */
+export type GatewayInfo = {
+  status: "ok" | "missingKey" | "error";
+  /** A key is stored for the provider, even if the query failed. */
+  hasKey: boolean;
+  /** USD spent by the key, as the gateway counts it. */
+  spend?: number | undefined;
+  /** The key's budget in USD; `null` when it has none. */
+  limit?: number | null | undefined;
+  /** When the key's budget window resets, epoch milliseconds. */
+  resetsAt?: number | null | undefined;
+  /** Budget window as the gateway reports it, e.g. `30d`. */
+  duration?: string | null | undefined;
+  /** Failure detail for the card and the modal. */
+  message?: string | undefined;
+  /** The gateway rejected the key (401/403). */
+  invalidKey?: boolean | undefined;
+  /**
+   * The key is valid, but the gateway blocks the management route `/key/info`
+   * (LiteLLM `allowed_routes`). The card treats it as an unavailable gateway
+   * instead of a rejected key.
+   */
+  routeBlocked?: boolean | undefined;
+};
+
+/** Result of saving a key: validated, stored-unvalidated or rejected. */
+export type GatewayKeySave = {
+  status: "ok" | "missingKey" | "invalid" | "unavailable";
+  info: GatewayInfo;
+  message?: string | undefined;
 };
 
 /* ------------------------------------------------------------------ */
@@ -168,10 +208,47 @@ export const observabilityStatusSchema = Schema.Struct({
   maxProcessMs: Schema.Number,
 });
 
+export const gatewayInfoSchema = Schema.Struct({
+  status: Schema.Union([
+    Schema.Literal("ok"),
+    Schema.Literal("missingKey"),
+    Schema.Literal("error"),
+  ]),
+  hasKey: Schema.Boolean,
+  spend: Schema.optional(Schema.Number),
+  limit: Schema.optional(Schema.NullOr(Schema.Number)),
+  resetsAt: Schema.optional(Schema.NullOr(Schema.Number)),
+  duration: Schema.optional(Schema.NullOr(Schema.String)),
+  message: optString,
+  invalidKey: Schema.optional(Schema.Boolean),
+  routeBlocked: Schema.optional(Schema.Boolean),
+});
+
+export const gatewayKeySaveSchema = Schema.Struct({
+  status: Schema.Union([
+    Schema.Literal("ok"),
+    Schema.Literal("missingKey"),
+    Schema.Literal("invalid"),
+    Schema.Literal("unavailable"),
+  ]),
+  info: gatewayInfoSchema,
+  message: optString,
+});
+
 const systemPromptInputSchema = Schema.Struct({
   sessionID: Schema.String,
   /** Hash the caller already holds; a match returns `unchanged` without parts. */
   ifNoneMatch: optString,
+});
+
+const gatewayInputSchema = Schema.Struct({
+  providerID: Schema.String,
+});
+
+const gatewayKeyInputSchema = Schema.Struct({
+  providerID: Schema.String,
+  /** Blank keeps the stored key; removal is its own action. */
+  key: Schema.String,
 });
 
 /* ------------------------------------------------------------------ */
@@ -192,6 +269,18 @@ export const StatsRpc = Rpc.define({
     setObservability: {
       input: Schema.toStandardSchemaV1(Schema.Struct({ enabled: Schema.Boolean })),
       output: Schema.toStandardSchemaV1(observabilityStatusSchema),
+    },
+    gateway: {
+      input: Schema.toStandardSchemaV1(gatewayInputSchema),
+      output: Schema.toStandardSchemaV1(gatewayInfoSchema),
+    },
+    setGatewayKey: {
+      input: Schema.toStandardSchemaV1(gatewayKeyInputSchema),
+      output: Schema.toStandardSchemaV1(gatewayKeySaveSchema),
+    },
+    clearGatewayKey: {
+      input: Schema.toStandardSchemaV1(gatewayInputSchema),
+      output: Schema.toStandardSchemaV1(gatewayInfoSchema),
     },
   },
   events: {},

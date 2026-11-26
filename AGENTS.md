@@ -13,7 +13,7 @@ npm run typecheck          # tsc --noEmit (index.ts + src/**/*.ts)
 npm run typecheck:gui      # tsc --noEmit -p tsconfig.gui.json
 npm run gui:build          # vite build -> dist/gui-experimental.cjs
 npm run gui:watch          # rebuild contínuo
-bun test test              # testes puros (metrics/history/chart/cost/prompt/capture/scheduler/observability/rpc)
+bun test test              # testes puros (metrics/history/chart/cost/gateway/prompt/capture/scheduler/observability/rpc)
 ```
 
 No repo pai (`opencode-tools`):
@@ -52,9 +52,10 @@ src/
   metrics.ts             # métricas puras da transcrição
   history.ts             # ring buffer/escala/paths (puro)
   format.ts              # formatação locale-aware
+  gateway.ts             # gasto da chave no gateway LiteLLM (só servidor)
   gui.tsx                # Plugin.define da GUI (./gui-experimental)
   gui/
-    contract.ts          # StatsRpc + tipos PromptPart/PromptCapture/ObservabilityStatus
+    contract.ts          # StatsRpc + tipos PromptPart/PromptCapture/ObservabilityStatus/GatewayInfo
     setup.tsx            # Panel (abas stats/prompt) + Command + MenuItem
     stats.tsx            # aba Estatísticas
     prompt.tsx           # aba System prompt
@@ -63,8 +64,9 @@ src/
     chart.tsx            # gráfico de linha/área SVG
     context-chart.tsx    # crescimento do contexto + checkpoints
     cost-chart.tsx       # custo por provider + projeção + limite
+    cost-config.tsx      # modal de configuração (valida e grava no save)
     cost-source.ts       # custo por fatia/provider via session.stats + cache
-    cost-settings.ts     # limite, já gasto e janela persistidos (global)
+    cost-settings.ts     # recarga, limite, já gasto e janela persistidos (global)
     header.tsx           # Slot session.header
     i18n.ts              # PT-BR + EN-US
 test/                    # bun:test das funções puras
@@ -105,6 +107,24 @@ test/                    # bun:test das funções puras
   devolve `{ status: "missing" }`, `{ status: "unchanged", hash, capturedAt,
   requestCount }` ou `{ status: "capture", capture }`. `observability` devolve o
   status do pipeline e `setObservability({ enabled })` alterna e persiste.
+- `src/gateway.ts` lê o gasto real da chave no gateway do provider
+  (`GET {baseURL}/key/info`), com `baseURL` vindo de
+  `ctx.provider.get({ providerID }).data.settings.baseURL`. A chave é digitada
+  na modal e guardada **no servidor** em `ctx.storage` (`gateway.key.<providerID>`,
+  texto plano); ela **nunca** volta na RPC, que carrega só o spend. As chamadas
+  `gateway` / `setGatewayKey` / `clearGatewayKey` da `StatsRpc` delegam para o
+  serviço: cache de ~30 s por provider, coalescência de fetches concorrentes e
+  geração por provider (trocar/remover a chave invalida um fetch em voo). O
+  parse aceita `info.spend`, `info.max_budget` (null = sem limite),
+  `info.budget_duration` e `info.budget_reset_at` (ISO, epoch em s ou em ms).
+  Falha de rede/5xx/JSON inesperado vira `status:"error"` com `hasKey: true`;
+  401/403 marca `invalidKey`, exceto quando o corpo mostra que a chave é válida e
+  o gateway bloqueia a rota (`allowed_routes`): aí vira `routeBlocked` e a chave
+  continua guardada. Salvar com chave em branco mantém a atual; salvar
+  uma chave nova **valida antes de gravar** (401/403 não grava e devolve
+  `invalid`), e uma falha de rede guarda a chave e devolve `unavailable`.
+  `createGateway` recebe storage, providers, fetch e clock injetados, por isso
+  tem teste puro em `test/gateway.test.ts`.
 - `src/prompt.ts` é puro e não importa nada do runtime do servidor; ele expande
   `metadata.experimental.instructions` e classifica as chaves:
   - `core/instructions` → grupo `added`;
@@ -168,28 +188,88 @@ classificado; documente isso se for adicionar um fallback.
     concorrência limitada a 4 e abort cooperativo (o signal só é checado entre
     chamadas porque o typecheck do servidor não tem DOM).
 - `src/gui/cost-chart.tsx` desenha o card **Custo e projeção** (depois de
-  **Sessão**): eixo X em tempo (não índice), eixo Y em USD, linha real
-  acumulada e projeção tracejada com inclinação = custo médio diário
-  (`src/cost.ts`, puro), linha de corte no **Limite** e marcador/data no
-  cruzamento. A janela (10/15/30 dias), o limite e o **Já gasto** ficam em
-  `src/gui/cost-settings.ts`, um store **global** (`ctx.storage.store`) com um
-  registro por provider. O `costSettingsFor` mantém uma cópia **autoritativa**
-  em `createSignal` e escreve no store com `set(...)` (valor inteiro, não
-  `update` aninhado): o `.value` do store não re-renderizava os memos depois de
-  um `update`, então digitar um limite novo não chegava ao gráfico. A semeadura
-  do store só acontece uma vez, quando `ready()` fica verdadeiro, e nunca
-  sobrescreve uma edição feita antes.
-  **Já gasto é um marco zero:** ao editar o campo (valor diferente do atual) o
-  settings carimba `spentAt = agora`; o card conta o custo medido **a partir
-  desse instante**, não a janela inteira. `costRanges(now, janela, spentAt)`
-  devolve o eixo começando no marco (ou no início da janela, quando o marco é
-  mais antigo, com o gasto intermediário num `offset` somado ao baseline). A
-  média divide pelo tempo decorrido desde o marco (piso de 1 dia); sem marco,
-  divide pela janela. O cruzamento do limite parte de `baseline + total`.
-  Cada tecla em `Já gasto` carimba um marco novo: o reload é debounced em
-  `COST_MARK_DEBOUNCE_MS` (~300 ms) e aborta o anterior, enquanto janela,
-  provider e refresh carregam na hora. O cache de fatias **não** é limpo pelo
-  marco: o custo de um intervalo não depende do baseline.
+  **Sessão**): eixo X em tempo (não índice), eixo Y em **% do limite** quando há
+  limite positivo (0/50/100/150+, linha de 100%) e em USD quando não há, uso
+  acumulado suavizado (monotone cubic), projeção com inclinação = custo médio
+  diário (`src/cost.ts`, puro), faixa futura hachurada e data do cruzamento. O
+  eixo X marca **hoje** primeiro, depois um checkpoint a cada 10 dias
+  (`COST_TICK_DAYS`, `forecastTicks`) e a **data do hit** (o cruzamento do
+  limite) por último, em destaque mesmo caindo na projeção; cada checkpoint tem
+  um guia tracejado no plot e `fitCheckpoints` (puro) resolve colisão com
+  prioridade hit > hoje > anterior, então a data que responde "quando o saldo
+  acaba" nunca some. O
+  card é **só leitura**: o provider é navegação e continua no cabeçalho, mas
+  todos os campos editáveis — limite, **Já gasto**, **Última recarga** e a
+  janela (10/15/30 dias) — vivem na modal de `src/gui/cost-config.tsx`, aberta
+  por **Configurar** e por **Repus créditos** (esta com a recarga preenchida com
+  agora). Nada é gravado ao digitar: `Salvar` roda `validateCostConfig` sobre o
+  rascunho inteiro e, só se tudo passar, chama `applyConfig` **uma vez**; um erro
+  marca o campo (`parseMoney`: `12,50`/`12.50`/`R$`; `parseRechargeDate`:
+  `dd/mm`, `dd/mm/aaaa` ou ISO, sem data futura), mantém a modal aberta e foca o
+  primeiro inválido. `parseMoney` aceita até **4 casas decimais** (`3,2345`,
+  `3.2345`); sem debounce e sem `COST_SPENT_COMMIT_MS`. **Última recarga** usa o
+  `DateInput` de `opencode-shared/gui` (classe `os-date`, o kit do host só tem
+  `TextInput` de texto): o valor é o dia local em `aaaa-mm-dd`
+  (`formatDateValue`), que `parseRechargeDate` já entende; o instante exato do
+  prefill de "Repus créditos" é preservado enquanto o campo não é tocado.
+  O estado persiste em `src/gui/cost-settings.ts`, um store **global**
+  (`ctx.storage.store`) com um registro por provider. O `costSettingsFor` mantém
+  uma cópia **autoritativa** em `createSignal` e escreve no store com `set(...)`
+  (valor inteiro, não `update` aninhado): o `.value` do store não re-renderizava
+  os memos depois de um `update`. A semeadura do store só acontece uma vez,
+  quando `ready()` fica verdadeiro, e nunca sobrescreve uma edição feita antes.
+  **Última recarga ancora o ciclo:** `start = lastRecharge` (fallback `spentAt`
+  legado, depois o início da janela), limitado a `agora − 90 dias` — uma recarga
+  mais antiga recorta o eixo e o card avisa "recarga há N dias". `costRanges`
+  devolve o eixo começando nele (com o gasto intermediário num `offset` somado
+  ao baseline quando o início cai antes da janela). **Já gasto** é o **total
+  gasto no ciclo** (no instante da recarga, normalmente 0); sem recarga e sem
+  valor anterior, o número digitado é o **total agora** e vira um degrau sobre a
+  janela medida — **não** carimba `spentAt = agora`, senão o eixo começaria no
+  save e esconderia todo o histórico anterior. Sem o total desenhado à mão (card
+  ainda não carregado), cai no comportamento antigo e carimba o marco.
+  `applyConfig` decide tudo
+  de uma vez: recarga nova (ou alterada) vira `lastRecharge = spentAt = data`, o
+  valor digitado vira baseline sem degrau e os ajustes anteriores são podados —
+  um campo não editado não carrega o total do ciclo anterior para o novo;
+  recarga igual com valor diferente trata o valor digitado como **total
+  corrente**: grava **um** ajuste `{ at: agora, delta = digitado − total
+  desenhado, seen = total desenhado − ajustes anteriores }` e move `spent` pelo
+  mesmo delta, então o baseline do marco não
+  muda e o card pousa exatamente no valor digitado; só limite/janela é patch
+  direto; limpar **Já gasto** apaga valor, marco e ajustes. **Migração:** um save
+  descarta os ajustes gravados antes de `seen` existir (foram calculados contra o
+  `spent` armazenado, não contra o total desenhado, e desenhavam degraus que o
+  card nunca mostrou); como o fim da série é `spent + medido` com ou sem eles, o
+  total não muda e o histórico legado deixa de dobrar a curva.
+  A média divide pelo tempo decorrido desde o início do eixo (piso de 1 dia);
+  sem marco, pela janela. O cruzamento do limite parte do total corrente
+  (`baseline + total + ajustes`) e o fim do eixo vem de `axisEnd`: cruzamento
+  + 3 dias (teto de 90) ou, sem cruzamento, hoje + 30 dias. `baselineAtMark` e
+  `applyCostAdjustments` mantêm os valores anteriores à edição intactos e
+  inserem um degrau no instante do save — inclusive quando o save acontece
+  depois do último ponto medido (o degrau é anexado ao fim da série, então a
+  edição aparece sem esperar o próximo fetch); a inclinação do forecast continua
+  sendo o custo médio **medido** (edições externas não inflam a média). O resumo do
+  card (`saldo acaba em ~data`, `não acaba no horizonte`, `limite já atingido`,
+  `sem limite`) e o recap dos valores ficam no rodapé, junto da legenda
+  Uso/Forecast/Limite. Só criar/limpar/alterar a recarga (mudança de
+  `lastRecharge`/`spentAt`) recarrega as fatias; o cache **não** depende do
+  baseline.
+  **Gateway (opcional):** o `load` chama `gateway({ providerID })` em paralelo
+  com as fatias; a resposta nunca derruba o card (uma exceção vira `null` e cai
+  no manual). Com `status:"ok"`, `gatewayCycle` (`src/cost.ts`, puro) dobra o
+  `gatewayBase`/`gatewayResetAt` guardados no settings: o total desenhado é
+  `spend − base`, o limite é `max_budget − base` (ou `max_budget` quando
+  `budget_reset_at` mudou ou o spend ficou abaixo da base) e a curva parte de
+  `base`. A série é fechada no spend da chave com um degrau no instante do
+  fetch, porque o gateway pode incluir gasto que esta máquina não mediu; os
+  ajustes manuais são ignorados nesse modo. **Repus créditos** captura o spend
+  e o `resetsAt` do gateway como base do ciclo novo (`applyConfig` com
+  `gateway`); **Configurar** só move a base quando a recarga muda, e limpar a
+  recarga a zera. Com `status:"missingKey"` o manual segue normal; com
+  `status:"error"` e `hasKey` o card mostra um aviso discreto (`invalidKey` ou a
+  mensagem) e usa o manual. O `onSaved` da modal re-dispara o `load`.
   O SVG é medido **no próprio `<section class="stats-card">`**, que é sempre
   renderizado — nunca dentro do `<Show when={provider()}>` condicional, senão o
   `ResizeObserver` montado no `onMount` não acha o host (os dados chegam depois)

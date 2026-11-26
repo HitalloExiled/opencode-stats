@@ -1,13 +1,17 @@
 /**
  * Cost + projection card.
  *
- * The chart is machine-wide: one provider at a time, cumulative spend over the
- * chosen day window, plus a straight projection from today with the window's
- * average daily cost as its slope. The optional budget is a horizontal cutoff;
- * when the projection crosses it, the card shows the date.
+ * The chart is machine-wide: one provider at a time, cumulative spend since the
+ * last top-up (`ultima recarga`), plus a straight projection from today with the
+ * average daily cost measured since then. The optional budget is a horizontal
+ * cutoff; when the projection crosses it, the card shows the date.
  *
- * `already spent` is a zero mark: the series starts at the instant it was set
- * (or at the window start when the mark is older) and every value includes it.
+ * `lastRecharge` anchors the cycle: the series starts there (or at the start of
+ * the window when it is older, with the spending in between folded into the
+ * baseline). Editing `already spent` does not move the anchor: each save is one
+ * signed external step at its instant, so the measured history keeps its shape
+ * and the running total — and the forecast that starts from it — follows the
+ * edit. Every editable field lives in the config modal (`./cost-config`).
  *
  * All the math lives in `../cost`; this file only fetches the axis slices, maps
  * time and cost into pixels and renders. The data comes from `session.stats`
@@ -23,25 +27,37 @@ import {
   onCleanup,
   onMount,
   Show,
-  untrack,
 } from "solid-js";
 import { usePlugin } from "@opencode/plugin/gui";
 
 import {
-  addDays,
+  adjustmentTotal,
+  applyCostAdjustments,
   averageDailyCost,
-  COST_WINDOW_SIZES,
+  axisEnd,
+  baselineAtMark,
+  clampStart,
   costRanges,
   costScale,
   cumulativeSeries,
   dayWindow,
+  fitCheckpoints,
+  forecastTicks,
   formatCost,
   formatCostAxis,
   formatCostDate,
   formatCostInstant,
+  formatCostValue,
+  formatPercent,
+  formatRechargeDate,
+  gatewayCycle,
   limitCrossing,
+  monotoneCurve,
+  percentOf,
+  percentScale,
   projectionSeries,
   spanDays,
+  type PlotPoint,
 } from "../cost";
 import {
   clearCostCache,
@@ -51,7 +67,9 @@ import {
   type CostRangeResult,
   type StatsClient,
 } from "./cost-source";
+import { openCostConfig } from "./cost-config";
 import { costSettingsFor } from "./cost-settings";
+import { StatsRpc, type GatewayInfo } from "./contract";
 import { useLocale, useT } from "./i18n";
 import chartCss from "./chart.scss?inline";
 import costCss from "./cost-chart.scss?inline";
@@ -60,53 +78,38 @@ const BASE_CSS = chartCss;
 const CSS = costCss;
 
 const W = 360;
-const H = 150;
-const LEFT = 42;
-const RIGHT = 10;
+const H = 164;
+const LEFT = 44;
+const RIGHT = 12;
 const TOP = 10;
-const BOTTOM = 20;
+const BOTTOM = 26;
 const PH = H - TOP - BOTTOM;
 const MIN_WIDTH = LEFT + RIGHT + 24;
+const DAY_MS = 86_400_000;
 
-const WINDOWS = COST_WINDOW_SIZES;
+/** Unique ids for the per-instance gradient and hatch pattern. */
+let instances = 0;
 
-/**
- * Pause before refetching after a new zero mark. Every keystroke in `already
- * spent` stamps one, and each mark moves the first slice, so waiting keeps the
- * last edit winning without a fetch per digit.
- */
-const COST_MARK_DEBOUNCE_MS = 300;
-
-/** Below this many days the daily dots are readable; above it they are noise. */
-const MAX_DOTS = 15;
+/** Beyond this the axis is clamped and the card says the top-up is older. */
+const COST_START_MAX_DAYS = 90;
 
 type Loaded = {
   /** Clock of the load, so the axis and the projection share one "now". */
   at: number;
-  /** Provider the slices/baseline describe. */
+  /** Provider the slices describe. */
   id: string | null;
-  /** When the user informed `already spent`; the count starts here. */
+  /** Start of the measured cycle: the top-up, or the legacy zero mark. */
   reset: number | undefined;
-  /** The baseline captured for this load, in USD. */
-  spent: number | undefined;
-  /** First instant on the axis (the reset, or the window start). */
+  /** First instant on the axis (the top-up, or the window start). */
   start: number;
   /** Slices of the selected provider, from `start` to `at`. */
   buckets: CostRangeResult[];
   /** Whole-window slices, so the provider picker ranks the window. */
   totals: CostRangeResult[];
-  /** Spending between the reset and the window start, per provider. */
+  /** Spending between the top-up and the window start, per provider. */
   offset: Record<string, number>;
-};
-
-const numText = (value: number | undefined): string =>
-  value === undefined || !Number.isFinite(value) ? "" : String(value);
-
-const parseAmount = (raw: string): number | undefined => {
-  const text = raw.trim().replace(",", ".");
-  if (text === "") return undefined;
-  const value = Number(text);
-  return Number.isFinite(value) && value >= 0 ? value : undefined;
+  /** The selected provider's gateway answer; null when it could not be read. */
+  gateway: GatewayInfo | null;
 };
 
 export function CostChart(props: { client: StatsClient; active: boolean }) {
@@ -139,21 +142,54 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
     return list[0]?.id;
   });
 
-  // The zero mark of the loaded data, not of the settings: a spent edit only
-  // reaches the chart when its slices arrive, so the baseline is never paired
-  // with a window that still belongs to the previous mark.
-  const reset = createMemo(() => loaded()?.reset);
+  /** The selected provider's gateway answer, when this load fetched one. */
+  const gateway = createMemo(() => loaded()?.gateway ?? null);
+
+  /** Key spend folded into the base captured at the top-up. */
+  const cycle = createMemo(() => {
+    const data = loaded();
+    const info = data?.gateway;
+    if (!data?.id || !info || info.status !== "ok" || info.spend === undefined) {
+      return undefined;
+    }
+    return gatewayCycle(
+      info.spend,
+      info.limit,
+      info.resetsAt,
+      settings.gatewayBase(data.id),
+      settings.gatewayResetAt(data.id),
+    );
+  });
 
   const series = createMemo(() => {
     const data = loaded();
     if (!data?.id) return undefined;
     const days = providerDays(data.buckets, data.id);
-    const baseline = (data.spent ?? 0) + (data.offset[data.id] ?? 0);
-    return cumulativeSeries(days, baseline, data.at);
+    // The informed total and its edits are read live from the store: an edit
+    // changes the value, not the fetched slices, so the history keeps its shape
+    // and only the step (and the total/forecast after it) moves. With the
+    // gateway connected, the key spend captured at the top-up is the baseline
+    // and the manual edits are ignored; the key total is the truth.
+    const keyed = cycle();
+    const adjustments = keyed ? [] : settings.adjustments(data.id);
+    const base = keyed
+      ? keyed.base
+      : baselineAtMark(settings.spent(data.id), adjustments);
+    const baseline = base + (data.offset[data.id] ?? 0);
+    const curve = cumulativeSeries(days, baseline, data.at);
+    // Make the drawn line land on the key's total: the gateway may include
+    // spending this machine did not measure (another client on the same key).
+    const measured = baseline + curve.total + adjustmentTotal(adjustments);
+    const steps = keyed
+      ? [{ at: data.at, delta: keyed.spent - measured }]
+      : adjustments;
+    return { points: applyCostAdjustments(curve.points, steps), total: curve.total };
   });
 
   const total = createMemo(() => series()?.total ?? 0);
   const current = createMemo(() => {
+    const keyed = cycle();
+    if (keyed) return keyed.spent;
     const points = series()?.points ?? [];
     return points[points.length - 1]?.value ?? 0;
   });
@@ -167,6 +203,8 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
   });
 
   const limit = createMemo(() => {
+    const keyed = cycle();
+    if (keyed && keyed.limit !== undefined) return keyed.limit;
     const id = provider();
     return id ? settings.limit(id) : undefined;
   });
@@ -175,11 +213,22 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
     limitCrossing(current(), limit(), average(), now()),
   );
 
-  const projectionEnd = createMemo(() => {
-    const cross = crossing();
-    if (cross !== undefined) return Math.max(now(), cross);
-    return addDays(now(), windowCount());
+  /** A positive limit is what switches the axis to percentage of the budget. */
+  const budget = createMemo(() => {
+    const value = limit();
+    return value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined;
   });
+
+  /** First instant on the axis: the top-up (or the legacy mark), else the window. */
+  const startAt = createMemo(
+    () => loaded()?.start ?? dayWindow(Date.now(), settings.window()).from,
+  );
+
+  // The drawn future: a little past the crossing, capped at 90 days; without a
+  // crossing in reach, a fixed 30-day horizon.
+  const projectionEnd = createMemo(() =>
+    axisEnd(current(), budget(), average(), now()),
+  );
 
   const projected = createMemo(() =>
     projectionSeries(
@@ -189,16 +238,36 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
     ),
   );
 
+  /** The crossing is only drawn when the axis reaches it. */
+  const crossingVisible = createMemo(() => {
+    const cross = crossing();
+    return cross !== undefined && cross <= projectionEnd();
+  });
+
   const domain = createMemo(() => ({
-    t0: loaded()?.start ?? dayWindow(Date.now(), settings.window()).from,
+    t0: startAt(),
     t1: Math.max(now(), projectionEnd()),
   }));
 
-  const yMax = createMemo(() => {
-    const values = [current(), ...projected().map((point) => point.value)];
-    const budget = limit();
-    if (budget !== undefined && budget > 0) values.push(budget);
-    return costScale(values.length > 0 ? Math.max(...values) : 0);
+  // One scale for both modes: percentage of the limit (the 100% line always in
+  // view, like the reference chart) or USD. `at` maps a USD value into axis
+  // units, so the paths and the grid share the same mapping. The history peak is
+  // included: a downward edit leaves earlier values above the current one.
+  const yAxis = createMemo(() => {
+    const values = [
+      ...(series()?.points ?? []).map((point) => point.value),
+      ...projected().map((point) => point.value),
+      // The gateway total may sit above the locally measured curve.
+      current(),
+    ];
+    const top = values.length > 0 ? Math.max(...values) : 0;
+    const cap = budget();
+    if (cap !== undefined) {
+      const { max, ticks } = percentScale(Math.max(percentOf(top, cap), 100));
+      return { percent: true, max, ticks, at: (value: number) => percentOf(value, cap) };
+    }
+    const max = costScale(top);
+    return { percent: false, max, ticks: [0, max / 2, max], at: (value: number) => value };
   });
 
   // Measure the card and redraw at that width, like the other charts: scaling a
@@ -221,25 +290,26 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
     if (t1 <= t0) return LEFT;
     return LEFT + pw() * Math.min(1, Math.max(0, (at - t0) / (t1 - t0)));
   };
-  const yAt = (value: number): number => {
-    const max = yMax();
+  const yAtAxis = (value: number): number => {
+    const max = yAxis().max;
     if (!(max > 0) || !Number.isFinite(value)) return TOP + PH;
     return TOP + PH * (1 - Math.min(1, Math.max(0, value / max)));
   };
+  const yAt = (value: number): number => yAtAxis(yAxis().at(value));
 
-  const realPath = createMemo(() => {
-    const points = series()?.points ?? [];
-    return points
-      .map((point, index) => `${index === 0 ? "M" : "L"}${xAt(point.t).toFixed(2)} ${yAt(point.value).toFixed(2)}`)
-      .join(" ");
-  });
+  const plotPoints = createMemo<PlotPoint[]>(() =>
+    (series()?.points ?? []).map((point) => ({ x: xAt(point.t), y: yAt(point.value) })),
+  );
 
-  const realArea = createMemo(() => {
-    const points = series()?.points ?? [];
+  const usagePath = createMemo(() => monotoneCurve(plotPoints()));
+
+  const usageArea = createMemo(() => {
+    const points = plotPoints();
     if (points.length < 2) return "";
     const first = points[0]!;
     const last = points[points.length - 1]!;
-    return `${realPath()} L${xAt(last.t).toFixed(2)} ${(TOP + PH).toFixed(2)} L${xAt(first.t).toFixed(2)} ${(TOP + PH).toFixed(2)} Z`;
+    const bottom = (TOP + PH).toFixed(2);
+    return `${usagePath()}L${last.x.toFixed(2)} ${bottom}L${first.x.toFixed(2)} ${bottom}Z`;
   });
 
   const projectionPath = createMemo(() => {
@@ -249,22 +319,43 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
       .join(" ");
   });
 
-  const grid = createMemo(() =>
-    [0, 0.5, 1].map((ratio) => ({
-      y: TOP + PH * (1 - ratio),
-      label: formatCostAxis(yMax() * ratio, locale, yMax()),
-    })),
-  );
-
-  const dayPoints = createMemo(() => {
-    const points = series()?.points ?? [];
-    if (windowCount() > MAX_DOTS || points.length < 2) return [];
-    return points;
+  /** End of the forecast: dot plus label, drawn only when the limit is in view. */
+  const forecastEnd = createMemo(() => {
+    const points = projected();
+    if (points.length === 0 || !crossingVisible()) return undefined;
+    const last = points[points.length - 1]!;
+    const cap = budget();
+    return {
+      x: xAt(last.t),
+      y: yAt(last.value),
+      label:
+        cap !== undefined
+          ? formatPercent(last.value / cap, locale)
+          : formatCost(last.value, locale),
+    };
   });
 
-  const crossingDate = createMemo(() => {
-    const cross = crossing();
-    return cross === undefined ? undefined : formatCostDate(cross, locale, true);
+  const grid = createMemo(() => {
+    const axis = yAxis();
+    return axis.ticks.map((tick) => ({
+      y: yAtAxis(tick),
+      label: axis.percent ? `${tick}%` : formatCostAxis(tick, locale, axis.max),
+    }));
+  });
+
+  const ticks = createMemo(() => {
+    // Today first, then one checkpoint every 10 days into the forecast, and the
+    // hit date last: the axis answers "when does the budget end".
+    const hit = crossingVisible() ? crossing() : undefined;
+    const list = forecastTicks(now(), domain().t1, hit).map((tick) => ({
+      x: xAt(tick.t),
+      label: formatCostDate(tick.t, locale),
+      current: tick.current,
+      hit: tick.hit,
+    }));
+    // A short axis can put two labels on the same pixels; a colliding label
+    // gives way, and the hit date never does.
+    return fitCheckpoints(list);
   });
 
   const crossed = createMemo(() => {
@@ -272,50 +363,147 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
     return cross !== undefined && cross <= now();
   });
 
-  const showCrossingLabel = createMemo(() => {
-    const cross = crossing();
-    if (cross === undefined) return false;
-    return Math.abs(xAt(cross) - xAt(now())) > 46;
-  });
-
   const summary = createMemo(() => {
-    const budget = limit();
-    if (budget === undefined || budget <= 0) return t("stats.costNoLimit");
+    const cap = budget();
+    if (cap === undefined) return t("stats.costNoLimit");
     if (crossed()) return t("stats.costReached");
     if (crossing() === undefined) return t("stats.costUnreachable");
-    return t("stats.costReaches", formatCostDate(crossing()!, locale, true));
+    return t("stats.costBalanceEnds", formatCostDate(crossing()!, locale, true));
   });
 
-  const effectiveWindow = createMemo(() => {
-    const width = settings.window();
-    return (WINDOWS as readonly number[]).includes(width) ? width : WINDOWS[0]!;
+  /** A key is stored but the gateway did not answer: the card uses the manual fields. */
+  const gatewayWarning = createMemo(() => {
+    const info = gateway();
+    if (!info || info.status !== "error" || !info.hasKey) return undefined;
+    if (info.invalidKey) return t("stats.costGatewayInvalid");
+    if (info.routeBlocked) return t("stats.costGatewayRoute");
+    return t("stats.costGatewayUnavailable", info.message ?? "—");
   });
 
-  // The draft text must survive typing a decimal point, so the inputs keep
-  // their own string and only re-sync when the provider or the store changes.
-  const [limitText, setLimitText] = createSignal("");
-  const [spentText, setSpentText] = createSignal("");
+  const uid = `stats-cost-${++instances}`;
 
-  createEffect(
-    on(
-      () => [provider(), settings.ready()] as const,
-      ([id]) => {
-        if (!id) {
-          setLimitText("");
-          setSpentText("");
-          return;
-        }
-        setLimitText(numText(untrack(() => settings.limit(id))));
-        setSpentText(numText(untrack(() => settings.spent(id))));
-      },
-    ),
-  );
+  const currentLabel = createMemo(() => {
+    const cap = budget();
+    return cap !== undefined
+      ? formatPercent(current() / cap, locale)
+      : formatCost(current(), locale);
+  });
 
-  const commit = (id: string | undefined, key: "limit" | "spent", raw: string): void => {
+  const limitMeta = createMemo(() => {
+    const cap = budget();
+    return cap !== undefined
+      ? t("stats.costOfLimit", formatCost(current(), locale), formatCost(cap, locale))
+      : t("stats.costNoLimit");
+  });
+
+  const averageLabel = createMemo(() => {
+    const cap = budget();
+    return cap !== undefined
+      ? t("stats.costAverageLine", formatPercent(average() / cap, locale))
+      : t("stats.costAverageLine", formatCost(average(), locale));
+  });
+
+  /** Pill behind the current date label; SVG has no text background. */
+  const pillWidth = (label: string): number => Math.round(label.length * 4.8 + 12);
+
+/** Centers a date label, clamped so the first and the last never clip. */
+  const tickX = (tick: { x: number; label: string }): number => {
+    const half = pillWidth(tick.label) / 2;
+    return Math.min(Math.max(tick.x, LEFT + half), width() - RIGHT - half);
+  };
+
+  const anchor = createMemo(() => {
+    const id = provider();
+    if (!id) return undefined;
+    return settings.lastRecharge(id) ?? settings.spentAt(id);
+  });
+
+  /** The top-up is older than the axis can reach: the series starts later. */
+  const clampedDays = createMemo(() => {
+    const start = settings.lastRecharge(provider() ?? "");
+    if (start === undefined) return undefined;
+    const days = Math.floor((now() - start) / DAY_MS);
+    return days > COST_START_MAX_DAYS ? days : undefined;
+  });
+
+  /** "Top-up on 26/11/2026", or the legacy "Counting from <instant>". */
+  const anchorNote = createMemo(() => {
+    const start = anchor();
+    if (start === undefined) return undefined;
+    const recharge = provider() ? settings.lastRecharge(provider()!) : undefined;
+    return recharge !== undefined
+      ? t("stats.costSinceRecharge", formatRechargeDate(recharge, locale))
+      : t("stats.costSince", formatCostInstant(start, locale));
+  });
+
+  /** Read-only recap of the configured values, under the legend. */
+  const configSummary = createMemo(() => {
+    const id = provider();
+    if (!id) return "";
+    const parts = [t("stats.costLimit"), formatCostValue(limit(), locale)];
+    if (cycle() || settings.spent(id) !== undefined) {
+      // The recap shows what the card draws now, not the internal baseline.
+      parts.push(
+        t("stats.costSpent"),
+        formatCostValue(loaded() ? current() : settings.spent(id), locale),
+      );
+    }
+    const recharge = settings.lastRecharge(id);
+    if (recharge !== undefined) {
+      parts.push(t("stats.costRecharge"), formatRechargeDate(recharge, locale));
+    }
+    const info = gateway();
+    if (info?.status === "ok" && info.spend !== undefined) {
+      parts.push(t("stats.costGateway"), formatCostValue(info.spend, locale));
+    }
+    return parts.join(" · ");
+  });
+
+  const refresh = (): void => {
+    setReload((value) => value + 1);
+  };
+
+  const openConfig = (): void => {
+    const id = provider();
     if (!id) return;
-    const value = parseAmount(raw);
-    if (key === "limit") settings.setLimit(id, value);
-    else settings.setSpent(id, value);
+    openCostConfig({
+      ctx,
+      settings,
+      providerID: id,
+      // The field edits the total the card draws, so it starts there; before the
+      // first load the stored value is the best available number.
+      prefillSpent: loaded() ? current() : settings.spent(id),
+      // Read at save time: the step is "typed minus what is drawn then", so an
+      // edit saved after more cost accrued still lands on the typed number.
+      current: () => current(),
+      onSaved: refresh,
+    });
+  };
+
+  const openRenew = (): void => {
+    const id = provider();
+    if (!id) return;
+    // A top-up starts a new cycle at now, so the baseline is usually 0. The
+    // cycle only moves when the modal is confirmed, and the exact instant is
+    // kept while the field is untouched.
+    openCostConfig({
+      ctx,
+      settings,
+      providerID: id,
+      prefillAt: Date.now(),
+      prefillSpent: 0,
+      current: () => current(),
+      onSaved: refresh,
+    });
+  };
+
+  /** The gateway answer never fails the card: a null value falls back to manual. */
+  const readGateway = async (providerID: string): Promise<GatewayInfo | null> => {
+    try {
+      return await ctx.client.rpc(StatsRpc).gateway({ providerID });
+    } catch {
+      return null;
+    }
   };
 
   const load = async (): Promise<void> => {
@@ -339,9 +527,12 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
       const selected = settings.selected();
       const id =
         selected && list.some((entry) => entry.id === selected) ? selected : list[0]?.id;
-      const spentAt = id ? settings.spentAt(id) : undefined;
-      const spent = id ? settings.spent(id) : undefined;
+      const spentAt = id
+        ? clampStart(settings.lastRecharge(id) ?? settings.spentAt(id), at)
+        : undefined;
       const plan = costRanges(at, size, spentAt);
+      // Start the gateway read now so it overlaps the cost slices.
+      const gatewayPromise = id ? readGateway(id) : Promise.resolve(null);
 
       let offset: Record<string, number> = {};
       if (plan.offset) {
@@ -359,20 +550,23 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
           const other = windowPlan.buckets[index];
           return other !== undefined && bucket.from === other.from && bucket.to === other.to;
         });
-      const buckets = reuse
-        ? totals
-        : await fetchCostRanges(props.client, plan.buckets, { signal: token, now: at });
+      const [buckets, gateway] = await Promise.all([
+        reuse
+          ? Promise.resolve(totals)
+          : fetchCostRanges(props.client, plan.buckets, { signal: token, now: at }),
+        gatewayPromise,
+      ]);
       if (token.aborted) return;
 
       setLoaded({
         at,
         id: id ?? null,
         reset: spentAt,
-        spent,
         start: plan.start,
         buckets,
         totals,
         offset,
+        gateway,
       });
     } catch (cause) {
       if (token.aborted) return;
@@ -385,54 +579,34 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
     }
   };
 
-  // Two keys instead of one: everything that changes the fetched window loads
-  // at once, while a new zero mark (typed into `already spent`) waits for a
-  // short pause. Each keystroke stamps a new mark, so loading per keypress
-  // would fire one abortable fetch per digit.
+  // Everything that changes the fetched slices (window, provider, refresh, or a
+// new/cleared zero mark) loads at once. Edits to `already spent` inside the same
+// cycle do not appear here: they change the value, not the slices, and the
+// series reads them live from the store.
   const baseKey = createMemo(() =>
     [
       props.active ? "1" : "0",
       settings.window(),
       settings.selected() ?? "",
       provider() ?? "",
+      String(
+        provider()
+          ? (settings.lastRecharge(provider()!) ?? settings.spentAt(provider()!) ?? "")
+          : "",
+      ),
       reload(),
     ].join("|"),
   );
-  const markKey = createMemo(() => {
-    const id = provider();
-    return id ? String(settings.spentAt(id) ?? "") : "";
-  });
-
-  let markTimer: ReturnType<typeof setTimeout> | undefined;
-  const clearMarkTimer = (): void => {
-    if (markTimer) clearTimeout(markTimer);
-    markTimer = undefined;
-  };
 
   createEffect(
-    on(
-      () => [baseKey(), markKey()] as const,
-      ([base], previous) => {
-        const baseChanged = !previous || previous[0] !== base;
-        if (!props.active) {
-          clearMarkTimer();
-          if (pending) pending.aborted = true;
-          return;
-        }
-        if (baseChanged) {
-          clearMarkTimer();
-          void load();
-          return;
-        }
-        clearMarkTimer();
-        markTimer = setTimeout(() => {
-          markTimer = undefined;
-          void load();
-        }, COST_MARK_DEBOUNCE_MS);
-      },
-    ),
+    on(baseKey, () => {
+      if (!props.active) {
+        if (pending) pending.aborted = true;
+        return;
+      }
+      void load();
+    }),
   );
-  onCleanup(clearMarkTimer);
 
   // Today's bucket goes stale while the panel stays open; the cache keeps past
   // days, so a periodic reload only re-reads today.
@@ -483,24 +657,6 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
               </For>
             </select>
           </Show>
-          <div
-            class="stats-token-view stats-cost-window"
-            role="group"
-            aria-label={t("stats.costWindow")}
-          >
-            <For each={WINDOWS}>
-              {(size) => (
-                <button
-                  type="button"
-                  classList={{ "is-active": effectiveWindow() === size }}
-                  onClick={() => settings.setWindow(size)}
-                  title={t("stats.costWindowOption", size)}
-                >
-                  {size}
-                </button>
-              )}
-            </For>
-          </div>
           <ctx.ui.Tooltip value={t("stats.refresh")}>
             <ctx.ui.IconButton
               icon="refresh"
@@ -510,33 +666,6 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
               onClick={retry}
             />
           </ctx.ui.Tooltip>
-        </div>
-
-        <div class="stats-cost-fields">
-          <label class="stats-cost-field">
-            <span>{t("stats.costLimit")}</span>
-            <ctx.ui.TextInput
-              value={limitText()}
-              onInput={(value) => {
-                setLimitText(value);
-                commit(provider(), "limit", value);
-              }}
-              label={t("stats.costLimit")}
-              placeholder="0.00"
-            />
-          </label>
-          <label class="stats-cost-field">
-            <span>{t("stats.costSpent")}</span>
-            <ctx.ui.TextInput
-              value={spentText()}
-              onInput={(value) => {
-                setSpentText(value);
-                commit(provider(), "spent", value);
-              }}
-              label={t("stats.costSpent")}
-              placeholder="0.00"
-            />
-          </label>
         </div>
 
         <Show when={error()}>
@@ -563,25 +692,40 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
         </Show>
 
         <Show when={provider()}>
-          <div class="stats-cost-summary">
-            <span class="stats-cost-stat">
-              <span class="stats-cost-stat-key">{t("stats.costCurrent")}</span>
-              <b>{formatCost(current(), locale)}</b>
-            </span>
-            <span class="stats-cost-stat">
-              <span class="stats-cost-stat-key">{t("stats.costAverage")}</span>
-              <b>{formatCost(average(), locale)}</b>
-            </span>
-            <span class="stats-cost-stat">
-              <span class="stats-cost-stat-key">{t("stats.costProjection")}</span>
-              <b classList={{ "is-warn": crossed() }}>{summary()}</b>
+          <div class="stats-cost-kpi">
+            <span class="stats-cost-kpi-key">{t("stats.costCurrent")}</span>
+            <b class="stats-cost-kpi-value" classList={{ "is-warn": crossed() }}>
+              {currentLabel()}
+            </b>
+            <span class="stats-cost-kpi-meta">{limitMeta()}</span>
+            <span class="stats-spacer" />
+            <span class="stats-cost-kpi-status" classList={{ "is-warn": crossed() }}>
+              {summary()}
             </span>
           </div>
 
-          <Show when={reset() !== undefined}>
-            <div class="stats-note">
-              <span>{t("stats.costSince", formatCostInstant(reset()!, locale))}</span>
-            </div>
+          <Show when={anchorNote()}>
+            {(note) => (
+              <div class="stats-note">
+                <span>{note()}</span>
+              </div>
+            )}
+          </Show>
+
+          <Show when={clampedDays()}>
+            {(days) => (
+              <div class="stats-note is-warn">
+                <span>{t("stats.costClamped", days())}</span>
+              </div>
+            )}
+          </Show>
+
+          <Show when={gatewayWarning()}>
+            {(message) => (
+              <div class="stats-note is-warn">
+                <span>{message()}</span>
+              </div>
+            )}
           </Show>
 
           <div class="stats-chart stats-cost-chart">
@@ -592,6 +736,22 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
               aria-label={`${t("stats.costTitle")}: ${summary()}`}
               preserveAspectRatio="none"
             >
+              <defs>
+                <linearGradient id={`${uid}-area`} x1="0" y1="0" x2="0" y2="1">
+                  <stop class="stats-cost-area-stop" offset="0%" stop-opacity="0.24" />
+                  <stop class="stats-cost-area-stop" offset="100%" stop-opacity="0" />
+                </linearGradient>
+                <pattern
+                  id={`${uid}-hatch`}
+                  width="7"
+                  height="7"
+                  patternUnits="userSpaceOnUse"
+                  patternTransform="rotate(45)"
+                >
+                  <line class="stats-cost-hatch-line" x1="0" y1="0" x2="0" y2="7" />
+                </pattern>
+              </defs>
+
               <For each={grid()}>
                 {(row) => (
                   <>
@@ -604,7 +764,7 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
                     />
                     <text
                       class="stats-chart-axis"
-                      x={LEFT - 4}
+                      x={LEFT - 5}
                       y={row.y + 3}
                       text-anchor="end"
                     >
@@ -614,53 +774,97 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
                 )}
               </For>
 
-              <Show when={limit() !== undefined && limit()! > 0}>
-                <line
-                  class="stats-cost-cutoff"
-                  x1={LEFT}
-                  x2={width() - RIGHT}
-                  y1={yAt(limit()!)}
-                  y2={yAt(limit()!)}
+              {/* Date checkpoints: a faint guide ties each labelled date to the
+                  plot, so the axis reads as a timeline. Today and the hit date
+                  already have their own vertical lines. */}
+              <For each={ticks()}>
+                {(tick) => (
+                  <Show when={!tick.current && !tick.hit}>
+                    <line
+                      class="stats-cost-checkpoint"
+                      x1={tick.x}
+                      x2={tick.x}
+                      y1={TOP}
+                      y2={TOP + PH}
+                    />
+                  </Show>
+                )}
+              </For>
+
+              <Show when={projected().length > 0}>
+                <rect
+                  class="stats-cost-hatch"
+                  x={xAt(now())}
+                  y={TOP}
+                  width={Math.max(0, width() - RIGHT - xAt(now()))}
+                  height={PH}
+                  fill={`url(#${uid}-hatch)`}
                 />
-                <text
-                  class="stats-cost-cutoff-label"
-                  x={width() - RIGHT}
-                  y={Math.max(TOP + 8, yAt(limit()!) - 3)}
-                  text-anchor="end"
-                >
-                  {t("stats.costLimit")} {formatCostAxis(limit()!, locale, yMax())}
-                </text>
+              </Show>
+
+              <Show when={budget()}>
+                {(cap) => (
+                  <>
+                    <line
+                      class="stats-cost-cutoff"
+                      x1={LEFT}
+                      x2={width() - RIGHT}
+                      y1={yAt(cap())}
+                      y2={yAt(cap())}
+                    />
+                    <Show when={!yAxis().percent}>
+                      <text
+                        class="stats-cost-cutoff-label"
+                        x={width() - RIGHT}
+                        y={Math.max(TOP + 8, yAt(cap()) - 3)}
+                        text-anchor="end"
+                      >
+                        {t("stats.costLimit")} {formatCostAxis(cap(), locale, yAxis().max)}
+                      </text>
+                    </Show>
+                  </>
+                )}
+              </Show>
+
+              <Show when={usagePath().length > 0}>
+                <path class="stats-cost-area" d={usageArea()} fill={`url(#${uid}-area)`} />
+                <path class="stats-cost-line" d={usagePath()} />
               </Show>
 
               <Show when={projectionPath().length > 0}>
                 <path class="stats-cost-projection" d={projectionPath()} />
               </Show>
 
-              <Show when={realPath().length > 0}>
-                <path class="stats-cost-area" d={realArea()} />
-                <path class="stats-cost-line" d={realPath()} />
+              <Show when={forecastEnd()}>
+                {(end) => (
+                  <>
+                    <circle
+                      class="stats-cost-end-dot"
+                      cx={end().x}
+                      cy={end().y}
+                      r={2.6}
+                    />
+                    <text
+                      class="stats-cost-end-label"
+                      x={Math.min(end().x, width() - RIGHT)}
+                      y={Math.max(TOP + 8, end().y - 6)}
+                      text-anchor="end"
+                    >
+                      {end().label}
+                    </text>
+                  </>
+                )}
               </Show>
 
-              <For each={dayPoints()}>
-                {(point) => (
-                  <circle
-                    class="stats-cost-dot"
-                    cx={xAt(point.t)}
-                    cy={yAt(point.value)}
-                    r={1.6}
-                  />
-                )}
-              </For>
-
               <line
-                class="stats-cost-today"
+                class="stats-cost-now"
                 x1={xAt(now())}
                 x2={xAt(now())}
                 y1={TOP}
                 y2={TOP + PH}
               />
 
-              <Show when={crossing() !== undefined}>
+              <Show when={crossingVisible()}>
                 <line
                   class="stats-cost-crossing"
                   x1={xAt(crossing()!)}
@@ -671,40 +875,86 @@ export function CostChart(props: { client: StatsClient; active: boolean }) {
                 <circle
                   class="stats-cost-crossing-dot"
                   cx={xAt(crossing()!)}
-                  cy={yAt(crossed() ? current() : limit() ?? 0)}
-                  r={2.8}
+                  cy={yAt(crossed() ? current() : budget() ?? 0)}
+                  r={2.6}
                 />
               </Show>
 
-              <text
-                class="stats-chart-axis"
+              <rect
+                class="stats-cost-axis-band"
                 x={LEFT}
-                y={H - 4}
-                text-anchor="start"
-              >
-                {formatCostDate(domain().t0, locale)}
-              </text>
-              <Show when={xAt(now()) - LEFT > 56}>
-                <text
-                  class="stats-chart-axis"
-                  x={xAt(now())}
-                  y={H - 4}
-                  text-anchor="middle"
-                >
-                  {t("stats.costToday")}
-                </text>
-              </Show>
-              <Show when={crossing() !== undefined && showCrossingLabel()}>
-                <text
-                  class="stats-cost-crossing-label"
-                  x={xAt(crossing()!)}
-                  y={H - 4}
-                  text-anchor="middle"
-                >
-                  {crossingDate()}
-                </text>
-              </Show>
+                y={H - 22}
+                width={Math.max(0, width() - LEFT - RIGHT)}
+                height={18}
+                rx={5}
+              />
+
+              <For each={ticks()}>
+                {(tick) => (
+                  <g>
+                    <Show when={tick.current || tick.hit}>
+                      <rect
+                        class="stats-cost-tick-pill"
+                        classList={{ "is-hit": tick.hit }}
+                        x={tickX(tick) - pillWidth(tick.label) / 2}
+                        y={H - 20}
+                        width={pillWidth(tick.label)}
+                        height={16}
+                        rx={4}
+                      />
+                    </Show>
+                    <text
+                      class="stats-chart-axis stats-cost-tick"
+                      classList={{
+                        "is-current": tick.current && !tick.hit,
+                        "is-hit": tick.hit,
+                      }}
+                      x={tickX(tick)}
+                      y={H - 8}
+                      text-anchor="middle"
+                    >
+                      {tick.label}
+                    </text>
+                  </g>
+                )}
+              </For>
             </svg>
+          </div>
+
+          <div class="stats-cost-footer">
+            <span class="stats-cost-average">{averageLabel()}</span>
+            <span class="stats-spacer" />
+            <div class="stats-cost-legend">
+              <span class="stats-cost-legend-item">
+                <i class="stats-cost-swatch is-usage" />
+                {t("stats.costLegendUsage")}
+              </span>
+              <Show when={projected().length > 0}>
+                <span class="stats-cost-legend-item">
+                  <i class="stats-cost-swatch is-forecast" />
+                  {t("stats.costLegendForecast")}
+                </span>
+              </Show>
+              <Show when={budget() !== undefined}>
+                <span class="stats-cost-legend-item">
+                  <i class="stats-cost-swatch is-limit" />
+                  {t("stats.costLegendLimit")}
+                </span>
+              </Show>
+            </div>
+          </div>
+
+          <div class="stats-cost-fields">
+            <span class="stats-cost-field-value">{configSummary()}</span>
+            <span class="stats-spacer" />
+            <div class="stats-cost-actions">
+              <ctx.ui.Button size="small" variant="ghost" onClick={openConfig}>
+                {t("stats.costConfigure")}
+              </ctx.ui.Button>
+              <ctx.ui.Button size="small" variant="neutral" onClick={openRenew}>
+                {t("stats.costRechargeAction")}
+              </ctx.ui.Button>
+            </div>
           </div>
 
           <div class="stats-note">
