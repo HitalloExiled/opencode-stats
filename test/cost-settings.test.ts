@@ -225,8 +225,7 @@ describe("applyCostConfig first value without a cycle mark", () => {
   });
 
   test("a legacy mark without a value keeps its anchor", () => {
-    const marked = fresh();
-    marked.spentAt = NOW - DAY;
+    const marked: ProviderCost = { ...fresh(), spentAt: NOW - DAY };
 
     const next = applyCostConfig(
       marked,
