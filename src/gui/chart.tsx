@@ -2,7 +2,7 @@
  * Line + area chart for the tok/s history.
  *
  * The turn range spans the whole current/last turn; the session range draws a
- * sliding window of the last 3, 6 or 12 hours, with one exact point per
+ * sliding window of the last 15, 30 or 60 minutes, with one exact point per
  * completed step. The domain spans the samples that are present in the window
  * (or the whole series when the window is empty), so idle periods never leave
  * empty space around the data. The y axis and the average are derived from the
@@ -28,13 +28,13 @@ import {
 import { useLocale, useT } from "./i18n";
 import chartCss from "./chart.scss?inline";
 
-export type ChartRange = "turn" | "3h" | "6h" | "12h";
+export type ChartRange = "turn" | "15m" | "30m" | "1h";
 
-/** Hours spanned by each sliding window, keyed by its range label. */
-const WINDOW_HOURS: Record<Exclude<ChartRange, "turn">, number> = {
-  "3h": 3,
-  "6h": 6,
-  "12h": 12,
+/** Minutes spanned by each sliding window, keyed by its range label. */
+const WINDOW_MINUTES: Record<Exclude<ChartRange, "turn">, number> = {
+  "15m": 15,
+  "30m": 30,
+  "1h": 60,
 };
 
 const CSS = chartCss;
@@ -89,7 +89,7 @@ export function RateChart(props: {
   const domain = createMemo(() =>
     props.range === "turn"
       ? sampleDomain(samples(), now())
-      : windowDomain(samples(), now(), WINDOW_HOURS[props.range]!),
+      : windowDomain(samples(), now(), WINDOW_MINUTES[props.range]!),
   );
 
   // The axis and the average describe what is actually drawn: the turn's
@@ -156,24 +156,24 @@ export function RateChart(props: {
             </button>
             <button
               type="button"
-              classList={{ "is-active": props.range === "3h" }}
-              onClick={() => props.onRange("3h")}
+              classList={{ "is-active": props.range === "15m" }}
+              onClick={() => props.onRange("15m")}
             >
-              {t("stats.window3h")}
+              {t("stats.window15m")}
             </button>
             <button
               type="button"
-              classList={{ "is-active": props.range === "6h" }}
-              onClick={() => props.onRange("6h")}
+              classList={{ "is-active": props.range === "30m" }}
+              onClick={() => props.onRange("30m")}
             >
-              {t("stats.window6h")}
+              {t("stats.window30m")}
             </button>
             <button
               type="button"
-              classList={{ "is-active": props.range === "12h" }}
-              onClick={() => props.onRange("12h")}
+              classList={{ "is-active": props.range === "1h" }}
+              onClick={() => props.onRange("1h")}
             >
-              {t("stats.window12h")}
+              {t("stats.window1h")}
             </button>
           </div>
         </div>

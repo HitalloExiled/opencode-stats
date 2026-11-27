@@ -139,39 +139,46 @@ describe("sampleDomain", () => {
 });
 
 describe("windowDomain", () => {
-  test("spans the samples inside the given hours", () => {
-    const samples = [sample(0, 10), sample(3 * 3600_000, 20)];
-    expect(windowDomain(samples, 3 * 3600_000, 3)).toEqual({ t0: 0, t1: 3 * 3600_000 });
+  test("spans the samples inside the given minutes", () => {
+    const samples = [sample(0, 10), sample(15 * 60_000, 20)];
+    expect(windowDomain(samples, 15 * 60_000, 15)).toEqual({ t0: 0, t1: 15 * 60_000 });
   });
 
   test("adapts to the samples when they don't fill the whole window", () => {
-    // The session was idle for most of the last 3h: only the last hour has
-    // data, so the domain spans the data instead of leaving empty space.
-    const samples = [sample(3_600_000, 10), sample(3 * 3600_000, 20)];
-    expect(windowDomain(samples, 3 * 3600_000, 3)).toEqual({
-      t0: 3_600_000,
-      t1: 3 * 3600_000,
+    // The session was idle for most of the last 30 minutes: only the last 15
+    // minutes have data, so the domain spans the data instead of leaving empty
+    // space.
+    const samples = [sample(15 * 60_000, 10), sample(30 * 60_000, 20)];
+    expect(windowDomain(samples, 30 * 60_000, 30)).toEqual({
+      t0: 15 * 60_000,
+      t1: 30 * 60_000,
     });
   });
 
   test("falls back to the full series when the window has no samples", () => {
     const samples = [sample(1_000, 10), sample(3_000, 20)];
-    expect(windowDomain(samples, 10_000_000, 3)).toEqual({ t0: 1_000, t1: 3_000 });
+    expect(windowDomain(samples, 10_000_000, 15)).toEqual({ t0: 1_000, t1: 3_000 });
   });
 
   test("gives a single sample inside the window a visible span", () => {
-    const samples = [sample(3_600_000, 10)];
-    expect(windowDomain(samples, 3 * 3600_000, 3)).toEqual({ t0: 3_600_000, t1: 3_601_000 });
+    const samples = [sample(15 * 60_000, 10)];
+    expect(windowDomain(samples, 30 * 60_000, 15)).toEqual({
+      t0: 15 * 60_000,
+      t1: 15 * 60_000 + 1_000,
+    });
   });
 
   test("slides as now moves past the oldest samples", () => {
-    const samples = [sample(0, 10), sample(2 * 3600_000, 20), sample(3 * 3600_000, 30)];
-    // The first sample is still inside the 3h window.
-    expect(windowDomain(samples, 3 * 3600_000, 3)).toEqual({ t0: 0, t1: 3 * 3600_000 });
+    const samples = [sample(0, 10), sample(15 * 60_000, 20), sample(30 * 60_000, 30)];
+    // The first sample is still inside the 15-minute window.
+    expect(windowDomain(samples, 30 * 60_000, 15)).toEqual({
+      t0: 15 * 60_000,
+      t1: 30 * 60_000,
+    });
     // It has slid out: the domain starts at the next sample.
-    expect(windowDomain(samples, 3 * 3600_000 + 1, 3)).toEqual({
-      t0: 2 * 3600_000,
-      t1: 3 * 3600_000,
+    expect(windowDomain(samples, 30 * 60_000 + 1, 15)).toEqual({
+      t0: 30 * 60_000,
+      t1: 30 * 60_000 + 1_000,
     });
   });
 });

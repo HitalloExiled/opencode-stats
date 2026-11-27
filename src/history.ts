@@ -109,8 +109,8 @@ export function sampleDomain(
 }
 
 /**
- * Sliding time window of `hours` over the series. The window covers the last
- * `hours` of real time; if the samples inside it don't span that whole span
+ * Sliding time window of `minutes` over the series. The window covers the last
+ * `minutes` of real time; if the samples inside it don't span that whole span
  * (e.g. the session was idle for part of it), the domain adapts to the samples
  * that are present, the same way the turn range spans its own samples — there
  * is never empty space around the data. With no sample inside the window at all
@@ -119,9 +119,9 @@ export function sampleDomain(
 export function windowDomain(
   samples: readonly SeriesSample[],
   now: number,
-  hours: number,
+  minutes: number,
 ): { t0: number; t1: number } {
-  const t0Window = now - hours * 3600_000;
+  const t0Window = now - minutes * 60_000;
   const t1Window = now;
   const inWindow = samples.filter((sample) => sample.t >= t0Window && sample.t <= t1Window);
   if (inWindow.length === 0) return sampleDomain(samples, now);
