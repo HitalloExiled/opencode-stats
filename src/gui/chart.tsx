@@ -2,10 +2,12 @@
  * Line + area chart for the tok/s history.
  *
  * The turn range spans the whole current/last turn; the session range draws a
- * sliding window of the last 3, 6 or 12 hours, anchored at the present, with
- * one exact point per completed step. The y axis and the average are derived
- * from the samples actually shown. The chart is plain SVG so the GUI bundle
- * carries no chart dependency.
+ * sliding window of the last 3, 6 or 12 hours, with one exact point per
+ * completed step. The domain spans the samples that are present in the window
+ * (or the whole series when the window is empty), so idle periods never leave
+ * empty space around the data. The y axis and the average are derived from the
+ * samples actually shown. The chart is plain SVG so the GUI bundle carries no
+ * chart dependency.
  */
 
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -87,7 +89,7 @@ export function RateChart(props: {
   const domain = createMemo(() =>
     props.range === "turn"
       ? sampleDomain(samples(), now())
-      : windowDomain(now(), WINDOW_HOURS[props.range]!),
+      : windowDomain(samples(), now(), WINDOW_HOURS[props.range]!),
   );
 
   // The axis and the average describe what is actually drawn: the turn's

@@ -289,7 +289,9 @@ classificado; documente isso se for adicionar um fallback.
   a partir do pico e da média das amostras **dentro da janela exibida** (Turno
   ou janela deslizante 3h/6h/12h), então os rótulos precisam ser reativos.
   O gráfico da janela mantém um clock próprio de 1 Hz (o `now` do painel só
-  ticka com `running`), então a janela deslisa mesmo com a sessão ociosa; o
+  ticka com `running`), então a janela deslisa mesmo com a sessão ociosa. O
+  domínio se adapta às amostras presentes na janela (`windowDomain`), como no
+  turno, para que períodos de ociosidade não deixem espaço vazio no eixo X; o
   rótulo do eixo X esquerdo mostra o horário local do início da janela
   (`formatClock`).
 - O gráfico de crescimento do contexto (`src/gui/context-chart.tsx`) usa um

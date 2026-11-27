@@ -59,9 +59,11 @@ symlink, instala as dependências e compila o bundle da GUI.
 - **Histórico**: gráfico de linha + área com toggle **Turno | 3h | 6h | 12h**.
   No turno, o eixo cobre o turno inteiro (amostras de 1 Hz durante o streaming
   e um ponto exato por passo concluído); nas janelas de tempo, um ponto exato
-  por passo concluído dentro de uma janela deslizante ancorada em agora — em
-  sessões longas, evita amassar toda a sessão em uma linha. O eixo Y se ajusta
-  à janela exibida e a média dessa janela aparece como linha tracejada.
+  por passo concluído dentro de uma janela deslizante dos últimos 3, 6 ou 12
+  h — em sessões longas, evita amassar toda a sessão em uma linha. O eixo se
+  adapta às amostras presentes na janela (como no turno), então períodos de
+  ociosidade não deixam espaço vazio no desenho. O eixo Y se ajusta à janela
+  exibida e a média dessa janela aparece como linha tracejada.
 - **Crescimento do contexto**: no card Sessão, acima da barra do contexto,
   gráfico de linha do prompt de cada request (`input + cache.read +
   cache.write`). O **eixo X é o número do request** (1º, 2º, 3º...), não o

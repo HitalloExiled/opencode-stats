@@ -109,14 +109,25 @@ export function sampleDomain(
 }
 
 /**
- * Sliding time window of `hours` anchored at `now`: the right edge is always
- * the present, so the window slides as time passes instead of stretching the
- * whole session over the plot.
+ * Sliding time window of `hours` over the series. The window covers the last
+ * `hours` of real time; if the samples inside it don't span that whole span
+ * (e.g. the session was idle for part of it), the domain adapts to the samples
+ * that are present, the same way the turn range spans its own samples — there
+ * is never empty space around the data. With no sample inside the window at all
+ * it falls back to the full series.
  */
-export function windowDomain(now: number, hours: number): { t0: number; t1: number } {
-  const t1 = now;
-  const t0 = t1 - hours * 3600_000;
-  return { t0, t1 };
+export function windowDomain(
+  samples: readonly SeriesSample[],
+  now: number,
+  hours: number,
+): { t0: number; t1: number } {
+  const t0Window = now - hours * 3600_000;
+  const t1Window = now;
+  const inWindow = samples.filter((sample) => sample.t >= t0Window && sample.t <= t1Window);
+  if (inWindow.length === 0) return sampleDomain(samples, now);
+  const t0 = inWindow[0]!.t;
+  const t1 = inWindow[inWindow.length - 1]!.t;
+  return { t0, t1: t1 > t0 ? t1 : t0 + 1000 };
 }
 
 export function averageValue(samples: readonly SeriesSample[]): number | undefined {
