@@ -1,15 +1,16 @@
 /**
  * Line + area chart for the tok/s history.
  *
- * The turn range spans the whole current/last turn; the session range uses one
- * exact point per completed step over the session's time span. The y axis and
- * the average are derived from the samples actually shown. The chart is plain
- * SVG so the GUI bundle carries no chart dependency.
+ * The turn range spans the whole current/last turn; the session range draws a
+ * sliding window of the last 3, 6 or 12 hours, anchored at the present, with
+ * one exact point per completed step. The y axis and the average are derived
+ * from the samples actually shown. The chart is plain SVG so the GUI bundle
+ * carries no chart dependency.
  */
 
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 
-import { formatRate } from "../format";
+import { formatClock, formatRate } from "../format";
 import {
   areaPath,
   averageValue,
@@ -19,12 +20,20 @@ import {
   normalizeSeries,
   sampleDomain,
   stepPointIndices,
+  windowDomain,
   type RateSample,
 } from "../history";
 import { useLocale, useT } from "./i18n";
 import chartCss from "./chart.scss?inline";
 
-export type ChartRange = "turn" | "session";
+export type ChartRange = "turn" | "3h" | "6h" | "12h";
+
+/** Hours spanned by each sliding window, keyed by its range label. */
+const WINDOW_HOURS: Record<Exclude<ChartRange, "turn">, number> = {
+  "3h": 3,
+  "6h": 6,
+  "12h": 12,
+};
 
 const CSS = chartCss;
 
@@ -41,12 +50,19 @@ export function RateChart(props: {
   turnSamples: readonly RateSample[];
   sessionSamples: readonly RateSample[];
   live: boolean;
-  now: number;
   range: ChartRange;
   onRange: (range: ChartRange) => void;
 }) {
   const t = useT();
   const locale = useLocale();
+
+  // The window slides with real time; the panel's clock only ticks while the
+  // session is running, so the chart keeps its own to stay live when idle.
+  const [now, setNow] = createSignal(Date.now());
+  createEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    onCleanup(() => clearInterval(timer));
+  });
 
   // Measure the card and redraw at that width. A fixed viewBox with
   // `width: 100%` scaled the whole drawing (text, strokes and dots) when the
@@ -65,10 +81,14 @@ export function RateChart(props: {
   });
 
   const samples = createMemo(() =>
-    props.range === "session" ? [...props.sessionSamples] : [...props.turnSamples],
+    props.range === "turn" ? [...props.turnSamples] : [...props.sessionSamples],
   );
 
-  const domain = createMemo(() => sampleDomain(samples(), props.now));
+  const domain = createMemo(() =>
+    props.range === "turn"
+      ? sampleDomain(samples(), now())
+      : windowDomain(now(), WINDOW_HOURS[props.range]!),
+  );
 
   // The axis and the average describe what is actually drawn: the turn's
   // samples or the whole session. Counting points outside the domain would
@@ -115,7 +135,7 @@ export function RateChart(props: {
   const lastPoint = createMemo(() => points()[points().length - 1]);
 
   const caption = () =>
-    props.range === "session" ? t("stats.sessionRange") : t("stats.turnRange");
+    props.range === "turn" ? t("stats.turnRange") : t(`stats.window${props.range}`);
 
   return (
     <>
@@ -134,10 +154,24 @@ export function RateChart(props: {
             </button>
             <button
               type="button"
-              classList={{ "is-active": props.range === "session" }}
-              onClick={() => props.onRange("session")}
+              classList={{ "is-active": props.range === "3h" }}
+              onClick={() => props.onRange("3h")}
             >
-              {t("stats.sessionRange")}
+              {t("stats.window3h")}
+            </button>
+            <button
+              type="button"
+              classList={{ "is-active": props.range === "6h" }}
+              onClick={() => props.onRange("6h")}
+            >
+              {t("stats.window6h")}
+            </button>
+            <button
+              type="button"
+              classList={{ "is-active": props.range === "12h" }}
+              onClick={() => props.onRange("12h")}
+            >
+              {t("stats.window12h")}
             </button>
           </div>
         </div>
@@ -197,7 +231,7 @@ export function RateChart(props: {
           </Show>
 
           <text class="stats-chart-axis" x={LEFT} y={H - 4} text-anchor="start">
-            {t("stats.start")}
+            {props.range === "turn" ? t("stats.start") : formatClock(domain().t0, locale)}
           </text>
           <text class="stats-chart-axis" x={width() - RIGHT} y={H - 4} text-anchor="end">
             {t("stats.now")}

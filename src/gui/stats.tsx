@@ -762,7 +762,6 @@ export function StatsView(props: { session: MountedSession }) {
             turnSamples={turnSamples()}
             sessionSamples={sessionSamples()}
             live={running()}
-            now={now()}
             range={range()}
             onRange={setRange}
           />

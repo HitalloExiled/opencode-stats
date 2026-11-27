@@ -54,13 +54,14 @@ symlink, instala as dependências e compila o bundle da GUI.
 - **Escala adaptativa**: o gauge tem piso de 40 tok/s e degraus redondos (40,
   60, 80, 100, 120, 160, 200...); a escala só cresce durante a sessão, então o
   arco não pula a cada amostra. O eixo Y do gráfico é recalculado para o pico
-  da janela exibida (**Turno** ou **Sessão**), com degraus a partir de 10 tok/s
-  e um pequeno respiro; ao trocar de janela ele também desce.
-- **Histórico**: gráfico de linha + área com toggle **Turno | Sessão**. No
-  turno, o eixo cobre o turno inteiro (amostras de 1 Hz durante o streaming e
-  um ponto exato por passo concluído); na sessão, um ponto exato por passo
-  concluído ao longo de toda a sessão. O eixo Y se ajusta à janela exibida e a
-  média dessa janela aparece como linha tracejada.
+  da janela exibida (**Turno** ou **3h | 6h | 12h**), com degraus a partir de
+  10 tok/s e um pequeno respiro; ao trocar de janela ele também desce.
+- **Histórico**: gráfico de linha + área com toggle **Turno | 3h | 6h | 12h**.
+  No turno, o eixo cobre o turno inteiro (amostras de 1 Hz durante o streaming
+  e um ponto exato por passo concluído); nas janelas de tempo, um ponto exato
+  por passo concluído dentro de uma janela deslizante ancorada em agora — em
+  sessões longas, evita amassar toda a sessão em uma linha. O eixo Y se ajusta
+  à janela exibida e a média dessa janela aparece como linha tracejada.
 - **Crescimento do contexto**: no card Sessão, acima da barra do contexto,
   gráfico de linha do prompt de cada request (`input + cache.read +
   cache.write`). O **eixo X é o número do request** (1º, 2º, 3º...), não o

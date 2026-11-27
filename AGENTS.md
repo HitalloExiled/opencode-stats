@@ -287,7 +287,11 @@ classificado; documente isso se for adicionar um fallback.
   `running`. O ponto exato entra quando o passo completa. A escala do gauge só
   cresce (`niceScale`); o eixo Y do gráfico é dinâmico (`chartScale`), calculado
   a partir do pico e da média das amostras **dentro da janela exibida** (Turno
-  ou Sessão), então os rótulos precisam ser reativos.
+  ou janela deslizante 3h/6h/12h), então os rótulos precisam ser reativos.
+  O gráfico da janela mantém um clock próprio de 1 Hz (o `now` do painel só
+  ticka com `running`), então a janela deslisa mesmo com a sessão ociosa; o
+  rótulo do eixo X esquerdo mostra o horário local do início da janela
+  (`formatClock`).
 - O gráfico de crescimento do contexto (`src/gui/context-chart.tsx`) usa um
   ponto por request da timeline (`input + cache.read + cache.write`) e desenha
   uma linha vertical em cada compactação `completed` — checkpoint visual, sem

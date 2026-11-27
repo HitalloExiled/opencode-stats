@@ -108,6 +108,17 @@ export function sampleDomain(
   return { t0, t1: t1 > t0 ? t1 : t0 + 1000 };
 }
 
+/**
+ * Sliding time window of `hours` anchored at `now`: the right edge is always
+ * the present, so the window slides as time passes instead of stretching the
+ * whole session over the plot.
+ */
+export function windowDomain(now: number, hours: number): { t0: number; t1: number } {
+  const t1 = now;
+  const t0 = t1 - hours * 3600_000;
+  return { t0, t1 };
+}
+
 export function averageValue(samples: readonly SeriesSample[]): number | undefined {
   const values = samples.map((sample) => sample.value).filter((value) => Number.isFinite(value) && value > 0);
   if (values.length === 0) return undefined;

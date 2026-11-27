@@ -23,6 +23,7 @@ import {
   checkpointIndex,
   requestWindow,
   requestWindowCheckpoints,
+  windowDomain,
   type CompactionCheckpoint,
   type ContextSample,
   type RateSample,
@@ -134,6 +135,21 @@ describe("sampleDomain", () => {
 
   test("falls back to a 60-second empty window", () => {
     expect(sampleDomain([], 60_000)).toEqual({ t0: 0, t1: 60_000 });
+  });
+});
+
+describe("windowDomain", () => {
+  test("anchors the right edge at now and spans the given hours", () => {
+    expect(windowDomain(3 * 3600_000, 3)).toEqual({ t0: 0, t1: 3 * 3600_000 });
+    expect(windowDomain(6 * 3600_000, 6)).toEqual({ t0: 0, t1: 6 * 3600_000 });
+    expect(windowDomain(12 * 3600_000, 12)).toEqual({ t0: 0, t1: 12 * 3600_000 });
+  });
+
+  test("slides with now instead of covering the whole series", () => {
+    expect(windowDomain(10_000_000, 3)).toEqual({
+      t0: 10_000_000 - 3 * 3600_000,
+      t1: 10_000_000,
+    });
   });
 });
 
